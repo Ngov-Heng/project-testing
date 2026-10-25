@@ -29,6 +29,6 @@ Future<Response> onRequest(RequestContext context, String id) async {
   }
 
   return Response.json(
-    body: {...doc, '_id': (doc['_id'] as ObjectId).toHexString()},
+    body: {...doc, '_id': (doc['_id'] as ObjectId).oid},
   );
 }
