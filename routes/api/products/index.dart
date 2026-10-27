@@ -9,6 +9,7 @@ Future<Response> onRequest(RequestContext context) async {
   final params = context.request.uri.queryParameters;
   final category = params['category'];
   final q = params['q']?.trim();
+  final featured = params['featured'] == 'true';
   final sort = params['sort'] ?? 'name';
   final page = int.tryParse(params['page'] ?? '') ?? 1;
   final limit = int.tryParse(params['limit'] ?? '') ?? 10;
@@ -34,6 +35,9 @@ Future<Response> onRequest(RequestContext context) async {
   }
   if (q != null && q.isNotEmpty) {
     selector.match('name', RegExp.escape(q), caseInsensitive: true);
+  }
+  if (featured) {
+    selector.eq('isFeatured', true);
   }
 
   final total = await collection.count(selector);
