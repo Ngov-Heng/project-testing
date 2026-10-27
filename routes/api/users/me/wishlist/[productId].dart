@@ -27,6 +27,11 @@ Future<Response> onRequest(RequestContext context, String productId) async {
           .collection('users')
           .updateOne(where.id(userId), modify.addToSet('wishlist', pid));
       return Response.json(body: {'productId': pid.oid, 'wishlisted': true});
+    case HttpMethod.delete:
+      await db
+          .collection('users')
+          .updateOne(where.id(userId), modify.pull('wishlist', pid));
+      return Response.json(body: {'productId': pid.oid, 'wishlisted': false});
     default:
       return Response(statusCode: 405);
   }
