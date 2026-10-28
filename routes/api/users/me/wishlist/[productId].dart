@@ -32,7 +32,11 @@ Future<Response> onRequest(RequestContext context, String productId) async {
           .collection('users')
           .updateOne(where.id(userId), modify.pull('wishlist', pid));
       return Response.json(body: {'productId': pid.oid, 'wishlisted': false});
-    default:
+    case HttpMethod.get:
+    case HttpMethod.post:
+    case HttpMethod.patch:
+    case HttpMethod.head:
+    case HttpMethod.options:
       return Response(statusCode: 405);
   }
 }

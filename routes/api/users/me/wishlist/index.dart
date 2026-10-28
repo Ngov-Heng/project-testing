@@ -8,7 +8,11 @@ Future<Response> onRequest(RequestContext context) async {
 
   final user = context.read<Map<String, dynamic>>();
   final ids = (user['wishlist'] as List?)?.cast<ObjectId>() ?? <ObjectId>[];
-  if (ids.isEmpty) return Response.json(body: {'items': [], 'count': 0});
+  if (ids.isEmpty) {
+    return Response.json(
+      body: {'items': <Map<String, dynamic>>[], 'count': 0},
+    );
+  }
 
   final products = await context
       .read<Db>()
