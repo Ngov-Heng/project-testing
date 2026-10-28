@@ -1,7 +1,9 @@
-/// Trims and lowercases an email so the same address is always stored the same way.
+/// Trims and lowercases an email so the same address
+/// is always stored the same way.
 String normalizeEmail(String email) => email.trim().toLowerCase();
 
-/// Removes spaces, dashes, dots and brackets from a phone number (keeps a leading +).
+/// Removes spaces, dashes, dots and brackets from a phone number
+/// (keeps a leading +).
 String normalizePhone(String phone) =>
     phone.replaceAll(RegExp(r'[\s\-().]'), '');
 
