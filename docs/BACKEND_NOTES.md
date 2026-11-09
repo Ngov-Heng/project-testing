@@ -3,9 +3,9 @@
 Living file. Updated at the end of every chunk. If a chat is lost, paste this
 file back and the work can continue.
 
-Last updated: end of chunk 4 (addresses and profile).
+Last updated: end of chunk 3 (buyer orders).
 Done so far: chunk 1 cart, chunk 2 settings and pricing, chunk 4 addresses and
-profile. Next in the work order: chunk 3 orders.
+profile, chunk 3 buyer orders. Next in the work order: chunk 5 auth gaps.
 
 ## Conventions
 
@@ -25,9 +25,9 @@ profile. Next in the work order: chunk 3 orders.
 
 | Method | URL | Who | Notes |
 |---|---|---|---|
-| POST | `/api/auth/register` | public | name, email or phone, password (8+). No token returned yet. |
+| POST | `/api/auth/register` | public | name, email or phone, password (8+). No token yet. |
 | POST | `/api/auth/login` | public | `identifier` = email or phone + password -> `{token, user}` |
-| GET | `/api/products` | public | `?category=&q=&featured=&sort=name\|price_asc\|price_desc&page=&limit=` -> `{items,total,page,limit}` |
+| GET | `/api/products` | public | `?category=&q=&featured=&sort=name\|price_asc\|price_desc&page=&limit=` |
 | GET | `/api/products/:id` | public | one product |
 | GET | `/api/categories` | public | `{items:[...]}` |
 | GET | `/api/settings` | public | shop, paymentMethods, deliveryFee, bulkDiscount |
@@ -37,6 +37,11 @@ profile. Next in the work order: chunk 3 orders.
 | DELETE | `/api/cart/items/:productId` | buyer | |
 | DELETE | `/api/cart` | buyer | empty the cart |
 | GET | `/api/cart/preview` | buyer | totals only |
+| POST | `/api/orders` | buyer | `{addressId, deliveryDate, deliveryWindow, paymentMethod}` -> 201 |
+| GET | `/api/orders` | buyer | `?tab=active\|past&page=&limit=` -> `{items,total,page,limit}` |
+| GET | `/api/orders/:id` | buyer | own order only |
+| PATCH | `/api/orders/:id/cancel` | buyer | `{reasonCode, note?}`, or `{reason}`; pending/processing only |
+| POST | `/api/orders/:id/reorder` | buyer | `{cart, skipped:[{productId,name,reason}]}` |
 | GET | `/api/users/me` | buyer | profile + `customerType` |
 | PUT | `/api/users/me` | buyer | `{name, phone?, email?}` |
 | GET | `/api/users/me/addresses` | buyer | default first |
@@ -63,50 +68,101 @@ settings   { _id: "shop", bulkDiscount {enabled, thresholdKg, percent},
              paymentMethods {paypal, cod} }
 addresses  { _id, userId, label (home|work|other), receiverName, phone, street,
              town, lat, lng, isDefault, createdAt, updatedAt? }
+counters   { _id: "orders", seq }            // order number counter, seeded 1000
+orders     { _id, userId, orderNumber "FH-1001", orderNumberValue 1001,
+             items: [{productId, name, image, quantityKg, pricePerKgCents,
+                      lineTotalCents}],
+             totalWeightKg, subtotalCents, discountCents, deliveryFeeCents,
+             totalCents, grandTotalCents,
+             address: {label, receiverName, phone, street, town, lat, lng},
+             deliveryDate "YYYY-MM-DD", deliveryWindow (morning|afternoon),
+             paymentMethod (paypal|cod), paymentStatus (unpaid|paid|failed),
+             status (pending|processing|on_the_way|delivered|cancelled),
+             statusHistory: [{status, at}], cancelReason (text the screens
+             show), cancelReasonCode?, cancelNote?, createdAt, updatedAt? }
 ```
 
 ## Business rules implemented
 
-- Pricing: line = kg × pricePerKg; 10% discount when total weight >= threshold
-  (default 150 kg); flat delivery fee $3.00; all three come from `settings`.
+- Pricing: line = kg x pricePerKg; bulk discount when total weight >= threshold
+  (default 150 kg); flat delivery fee; all three come from `settings`.
   `total` = subtotal - discount (cart screen), `grandTotal` = total +
-  deliveryFee (checkout screen). Cart and checkout share `calculateTotals`.
+  deliveryFee (checkout/payment).
 - Settings: one document `_id: "shop"`, auto-created with defaults, missing
   fields back-filled on read. Percent 0-100, threshold > 0, fee >= 0, shop name
-  required, at least one payment method must stay on.
-- Addresses: max 10 per buyer; first address becomes default; setting
-  `isDefault: true` clears the old default; the current default cannot unset
-  itself; deleting the default promotes the oldest remaining. Every query is
-  filtered by `userId`, so another buyer's id answers 404.
-- Profile: name required (<= 80); phone/email normalised and unique across
-  accounts (409); an account must keep a phone or an email; `customerType`,
-  `role`, `isVerified` are never changed through the profile.
+  required, at least one payment method stays on.
+- Addresses: max 10 per buyer; first becomes default; `isDefault: true` clears
+  the old default; the current default cannot unset itself; deleting the default
+  promotes the oldest remaining; every query filtered by `userId`.
+- Profile: name required (<= 80); phone/email normalised and unique (409); an
+  account must keep a phone or an email; `customerType`, `role`, `isVerified`
+  are never changed by the profile route.
+- Cancel reasons are the four radios on screen 28:
+  `ordered_by_mistake`, `change_address_or_date`, `found_better_price`,
+  `other`, plus an optional `note` (<= 200). `cancelReason` keeps the display
+  text ("I found a better price - cheaper at the market").
+- Orders: cart must be non-empty; address must belong to the buyer; delivery
+  date from tomorrow to 7 days ahead in Phnom Penh time; window
+  morning|afternoon; payment method must be switched on in settings; order
+  number from the `counters` document via an atomic `$inc`; items and address
+  are copied onto the order; stock is taken off with a conditional
+  `{stock: {$gte: kg}}` update and rolled back if a later item fails; cart is
+  emptied only after the order is saved; buyer may cancel only while
+  pending/processing, with a reason, and the kg go back on the shelf; status
+  transitions live in `orderTransitions` (shared with the admin chunk).
 - Stock: cart refuses quantities above `stock` (409); a product with no `stock`
   field is treated as unlimited.
+
+## Status changes
+
+```
+pending  -> processing | cancelled
+processing -> on_the_way | cancelled
+on_the_way -> delivered
+delivered / cancelled -> (nothing)
+```
 
 ## Decisions made (and why)
 
 - Labels, enums and `town` are free text or lowercase strings; the app owns
-  display casing and the town dropdown list. Alternative: server-side list.
-  Why: the screens show a dropdown the backend has no list for.
-- Profile PUT is a full replace (phone/email missing = removed). Alternative:
-  partial patch. Why: screen 32 saves all three fields at once.
-- Read-only fields sent to the profile PUT are ignored, not rejected. Why:
-  a lecturer may click around; silently ignoring keeps the response honest.
-- `customerType` defaults to `household` when the field is missing, so old
-  accounts still render.
+  display casing. Alternative: server-side lists. Why: no list exists to use.
+- Profile PUT is a full replace (missing phone/email = removed).
+- Read-only profile fields are ignored, not rejected.
+- `customerType` defaults to `household` when missing (old accounts).
+- Deleting the default address promotes the oldest remaining.
+- `DELETE /addresses/:id` returns the remaining list so the screen re-renders
+  in one call.
+- `deliveryDate` is stored as a "YYYY-MM-DD" string, not a Date. Alternative: a
+  UTC timestamp. Why: a delivery *date* has no time-of-day, and a string can
+  never shift across timezones. `createdAt`/`updatedAt` stay UTC timestamps.
+- Orders store **both** `totalCents` (subtotal - discount) and `grandTotalCents`
+  (total + fee) so the app reuses the cart field names everywhere.
+- `paymentStatus` starts `unpaid` for both PayPal and COD; PayPal flips it to
+  `paid` in the PayPal chunk, the admin flips COD (chunk 7).
+- A payment method switched off in settings is refused at order time (400), not
+  silently swapped.
+- Reorder reuses `addCartItem`, so cart rules (active product, stock) are not
+  duplicated; anything refused is reported in `skipped` with the cart’s own
+  message.
+- Cancelling stores a reason **code** plus an optional note, not just free
+  text, because screen 28 is four fixed radios and reports (chunk 10) can then
+  group them. A plain `reason` string is still accepted so nothing breaks.
+- Stock deduction is check-then-`$inc` per item with rollback, because the
+  single-node MongoDB has no multi-document transactions. A crash between the
+  deductions and the insert could leave stock low; documented as a known limit.
+- `routes/api/orders/[id]/index.dart` (not `[id].dart`) because Dart Frog
+  refuses a route file and a folder with the same name.
 
 ## What is left
 
 | Chunk | Scope |
 |---|---|
-| 3 (orders) | POST /api/orders, GET /api/orders?tab=active\|past, GET /api/orders/:id, POST /api/orders/:id/cancel {reason}, POST /api/orders/:id/reorder. Atomic counter for FH-1001. Cents on orders + lines. Stock deduct/rollback without transactions. |
 | 5 | auth gaps: verified flag, 6-digit code, forgot/reset password, change password, admin login, customerType at sign-up |
 | 6 | products/categories admin + seed (12 products, 4 categories, 3 low stock, 3 featured) |
-| 7 | admin orders + dashboard + delivery schedule |
+| 7 | admin orders + dashboard + delivery schedule (reuses `orderTransitions`) |
 | 8 | reviews (one per product per delivered order) |
 | 9 | quotes + notifications |
 | 10 | admin customers + reports |
-| 11 | PayPal sandbox |
+| 11 | PayPal sandbox (sets `paymentStatus: paid`) |
 
 Left alone on purpose: `/health`, `/api/db_check`, wishlist, products route shape.
