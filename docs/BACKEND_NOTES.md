@@ -3,10 +3,10 @@
 Living file. Updated at the end of every chunk. If a chat is lost, paste this
 file back and the work can continue.
 
-Last updated: end of chunk 5 (auth gaps).
+Last updated: end of chunk 6 (products, categories, stock, seed).
 Done so far: chunk 1 cart, chunk 2 settings and pricing, chunk 4 addresses and
-profile, chunk 3 buyer orders, chunk 5 auth gaps. Next in the work order:
-chunk 6 products, categories and the seed script.
+profile, chunk 3 buyer orders, chunk 5 auth gaps, chunk 6 products. Next in
+the work order: chunk 7 admin orders and dashboard.
 
 ## Conventions
 
@@ -33,9 +33,16 @@ chunk 6 products, categories and the seed script.
 | POST | `/api/auth/reset-password` | public | `{identifier, code, password}`; also marks the account verified |
 | POST | `/api/auth/login` | public | `identifier` = email or phone + password -> `{token, user}`; 403 until verified |
 | PATCH | `/api/users/me/password` | buyer | `{currentPassword, newPassword}` (screen 34) |
-| GET | `/api/products` | public | `?category=&q=&featured=&sort=name\|price_asc\|price_desc&page=&limit=` |
+| GET | `/api/products` | public | `?category=&q=&featured=&minPrice=&maxPrice=&inStock=true&sort=name\|price_asc\|price_desc&page=&limit=` (limit max 50) |
 | GET | `/api/products/:id` | public | one product |
-| GET | `/api/categories` | public | `{items:[...]}` |
+| GET | `/api/categories` | public | `{items:[{_id, name, sortOrder, productCount}], count}` |
+| GET | `/api/admin/products` | admin | `?q=&category=&stockLevel=all\|in_stock\|low\|out&page=&limit=` -> items + `summary{products,totalKg,lowStock,outOfStock}` |
+| POST | `/api/admin/products` | admin | 201, screen 42 fields |
+| GET/PUT | `/api/admin/products/:id` | admin | one product / full replace of the editable fields |
+| POST | `/api/admin/products/:id/restock` | admin | `{stock}` sets the counted level, keeps `restockHistory` |
+| GET | `/api/admin/products/stock` | admin | screen 43: summary + every product, emptiest first |
+| GET/POST | `/api/admin/categories` | admin | list with `productCount` / 201 add |
+| GET/PUT/DELETE | `/api/admin/categories/:id` | admin | detail + its products / rename (cascades) / delete (409 while used) |
 | GET | `/api/settings` | public | shop, paymentMethods, deliveryFee, bulkDiscount |
 | GET | `/api/cart` | buyer | full cart with totals |
 | POST | `/api/cart/items` | buyer | `{productId, quantityKg}` |
@@ -70,8 +77,10 @@ users      { _id, name, email?, phone?, passwordHash, role? (admin), customerTyp
                             expiresAt, attempts },   // deleted once used
              createdAt, wishlist[] }
 products   { _id, name, category (String = category name), pricePerKg (dollars),
-             stock (Int kg), image, description, isActive, isFeatured }
-categories { _id, name }
+             stock (Int kg), image, description (<= 160 chars), isActive,
+             isFeatured, createdAt, updatedAt?, restockedAt?,
+             restockHistory: [{stock, at}] }
+categories { _id, name (unique, case-insensitive), sortOrder, createdAt }
 carts      { _id = user id, items: [{productId, quantityKg}] }
 settings   { _id: "shop", bulkDiscount {enabled, thresholdKg, percent},
              deliveryFeeCents, shop {name, phone, address},
@@ -136,6 +145,20 @@ orders     { _id, userId, orderNumber "FH-1001", orderNumberValue 1001,
 - Forgot password answers the same sentence whether or not the account exists,
   so nobody can use it to find out who shops at FAHENG.
 
+- Stock is told apart in one place: `>= 100 kg` in stock, `1 - 99 kg` low,
+  `0` out. Screens 41 and 43 read `stockStatus` from the API instead of
+  carrying their own threshold.
+- A product's category must be one of the categories (400 otherwise), because
+  screen 42 picks from a dropdown - a typo would create a category no screen
+  can show.
+- Renaming a category rewrites `category` on every product, since a product
+  stores the name as a string. Deleting one is refused with 409 while products
+  still use it, and the message says how many.
+- Adding or renaming a category to a name that already exists (ignoring case)
+  is a 409.
+- Restock **sets** the level (the admin counts the bags) and appends to
+  `restockHistory`; it does not add to the old number.
+
 ## Status changes
 
 ```
@@ -193,12 +216,30 @@ delivered / cancelled -> (nothing)
 - Verifying a code returns a token, so the app goes from screen 10 straight to
   the home screen instead of asking for the password twice.
 
+- The public product and category routes keep the raw document shape chunk 1
+  shipped, but every document passes through `jsonSafe` first: a stored
+  `createdAt` is a DateTime, and a DateTime cannot be put in JSON. Without
+  that, adding a product turned the public list into a 500.
+- No DELETE for a product: screen 41 only offers "Edit", and chunk 4's orders
+  keep a snapshot anyway. `isActive: false` is the "remove from the shop"
+  switch the screen actually has.
+- `GET /api/admin/products/stock` has no paging: screen 43 shows every product
+  and the shop has tens of them, not thousands.
+- The seed script (`dart run tool/seed.dart`) only inserts what is missing by
+  name, so it is safe to run twice and never deletes a product that a cart or
+  an order points at. 4 categories, 12 products, 3 under 100 kg, 3 featured,
+  5,880 kg in total.
+- The admin sample screens name the four categories Fragrant / Sticky / Whole
+  grain / Organic, while the buyer screens and the seed say Jasmine / Sticky /
+  Brown / Bulk. The shop uses the buyer/seed names; the admin mock is a
+  placeholder.
+
 ## What is left
 
 | Chunk | Scope |
 |---|---|
 | 5 | done: verified flag, 6-digit code, forgot/reset password, change password, admin login, customerType at sign-up |
-| 6 | products/categories admin + seed (12 products, 4 categories, 3 low stock, 3 featured) |
+| 6 | done: products/categories admin, stock and restock, seed (12 products, 4 categories, 3 low stock, 3 featured) |
 | 7 | admin orders + dashboard + delivery schedule (reuses `orderTransitions`) |
 | 8 | reviews (one per product per delivered order) |
 | 9 | quotes + notifications |

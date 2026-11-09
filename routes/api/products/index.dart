@@ -1,4 +1,13 @@
+// WHY: Screens 02 (featured row), 03 (listing), 13/14 (search) and 15 (filter
+// and sort) all read this one list. Screen 15 adds three things the original
+// route did not have: a price range ("$0.90 - $1.30"), the "In stock only"
+// switch, and a result count ("Show 3 results") which is the `total` field.
+// Where it sits in the flow: public, no token. The document shape stays the
+// one chunk 1 shipped (`_id` as a hex string, dollars in `pricePerKg`) so the
+// Flutter cart and product screens keep working.
+
 import 'package:dart_frog/dart_frog.dart';
+import 'package:faheng_api/services/product_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
 Future<Response> onRequest(RequestContext context) async {
@@ -10,9 +19,12 @@ Future<Response> onRequest(RequestContext context) async {
   final category = params['category'];
   final q = params['q']?.trim();
   final featured = params['featured'] == 'true';
+  final inStockOnly = params['inStock'] == 'true';
   final sort = params['sort'] ?? 'name';
   final page = int.tryParse(params['page'] ?? '') ?? 1;
   final limit = int.tryParse(params['limit'] ?? '') ?? 10;
+  final minPrice = double.tryParse(params['minPrice'] ?? '');
+  final maxPrice = double.tryParse(params['maxPrice'] ?? '');
 
   const allowedSorts = ['name', 'price_asc', 'price_desc'];
   if (page < 1 || limit < 1 || limit > 50 || !allowedSorts.contains(sort)) {
@@ -23,6 +35,19 @@ Future<Response> onRequest(RequestContext context) async {
             'page must be 1 or more, limit 1 to 50, '
             'sort must be name, price_asc or price_desc',
       },
+    );
+  }
+  if ((params['minPrice'] != null && minPrice == null) ||
+      (params['maxPrice'] != null && maxPrice == null)) {
+    return Response.json(
+      statusCode: 400,
+      body: {'error': 'minPrice and maxPrice must be numbers'},
+    );
+  }
+  if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
+    return Response.json(
+      statusCode: 400,
+      body: {'error': 'minPrice cannot be more than maxPrice'},
     );
   }
 
@@ -39,6 +64,11 @@ Future<Response> onRequest(RequestContext context) async {
   if (featured) {
     selector.eq('isFeatured', true);
   }
+  // The price slider on screen 15 is inclusive on both ends.
+  if (minPrice != null) selector.gte('pricePerKg', minPrice);
+  if (maxPrice != null) selector.lte('pricePerKg', maxPrice);
+  // "In stock only": anything above zero can be ordered.
+  if (inStockOnly) selector.gt('stock', 0);
 
   final total = await collection.count(selector);
 
@@ -53,9 +83,7 @@ Future<Response> onRequest(RequestContext context) async {
   selector.skip((page - 1) * limit).limit(limit);
   final docs = await collection.find(selector).toList();
 
-  final items = docs.map((doc) {
-    return {...doc, '_id': (doc['_id'] as ObjectId).oid};
-  }).toList();
+  final items = docs.map(publicProductView).toList();
 
   return Response.json(
     body: {'items': items, 'total': total, 'page': page, 'limit': limit},
