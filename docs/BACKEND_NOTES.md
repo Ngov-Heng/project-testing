@@ -234,6 +234,82 @@ delivered / cancelled -> (nothing)
   Brown / Bulk. The shop uses the buyer/seed names; the admin mock is a
   placeholder.
 
+## Chunk 7 - admin orders, dashboard, delivery schedule
+
+### Endpoints
+
+| Method | Path | Screen | What it does |
+|---|---|---|---|
+| GET | `/api/admin/dashboard` | 37 | today's orders and revenue vs yesterday, pending, low stock, recent orders |
+| GET | `/api/admin/orders` | 38 | paged list with search, status, date range, sort and status counts |
+| GET | `/api/admin/orders/:id` | 39 | one order + the customer card + the statuses it may move to |
+| PATCH | `/api/admin/orders/:id/status` | 39 | move an order along the pipeline, cancel puts the stock back |
+| PATCH | `/api/admin/orders/:id/payment` | 39 | mark a cash order paid or unpaid by hand |
+| POST | `/api/admin/orders/:id/schedule` | 40 | give an unscheduled order a delivery date and window |
+| GET | `/api/admin/delivery-schedule` | 40 | the 7 day grid for a week + the orders still waiting for a slot |
+
+### Rules that only live here
+
+- `heavy` means **150 kg or more** (screen 40: "Heavy: orders of 150 kg or
+  more"). It is a display flag computed from `totalWeightKg`, never stored.
+- Admin may only cancel a `pending` or `processing` order; anything already on
+  the way has left the shop. Cancelling calls `restoreStockForOrder`, the same
+  helper the buyer's own cancel uses, so the two can never drift apart.
+- `paymentStatus` can be set by hand only for `cod`. PayPal is confirmed by the
+  provider (chunk 11), so a hand edit answers 409 with a clear message. A
+  cancelled order cannot be marked paid.
+- A delivery date must be today up to 14 days ahead, in Phnom Penh days. A past
+  day, a day three weeks out or a window that is not `morning`/`afternoon`
+  answers 400.
+- Scheduled orders never appear in the `unscheduled` panel of screen 40, and
+  cancelled orders appear in neither the grid nor the panel.
+
+### Time zones, and the bug this chunk found
+
+`phnomPenhDayStart(utc)` is the **instant** a Phnom Penh day begins, which is
+17:00 UTC the day before. Comparing it with `DateTime.difference().inDays` is
+wrong for dates: at 12:00 UTC "yesterday" comes out as 0 days away, because the
+gap is only 17 hours. Two different helpers now exist and each has one job:
+
+- `phnomPenhDate(utc)` - the calendar date a person in Cambodia would write
+  down, as a UTC midnight. Used for weeks and for "is this date in the past".
+- `phnomPenhDayStart(utc)` - the instant, used as a `createdAt` boundary.
+
+The week grid had the same fault: it fed `phnomPenhDayStart` into `weekMonday`
+and therefore showed the previous week for the whole evening in Cambodia.
+
+### The mongo_dart trap that cost the first test run
+
+`where.raw(map)` **stores the map but drops it from the query**. Every filter
+built that way returned the whole table while `sort`, `skip` and `limit` on the
+same selector kept working, so the paging looked right and only the filters were
+silently ignored. Chunk 6's product list had the same fault, so its totals were
+right (they came from `count(map)` anyway) and its rows were not.
+
+The rule from now on: never wrap a map in `where.raw`. Either pass the map
+straight to `count(map)` / `find(map)`, or build a `SelectorBuilder` with the
+fluent methods and use it directly. Both services now expose
+
+- `buildOrderQuery(filters)` / `buildProductQuery(filters)` - the status, date
+  and stock conditions, as a `SelectorBuilder`;
+- `searchOrderIds(db, term)` / `searchProductIds(db, term)` - the text search,
+  which has to look in two collections and therefore returns ids that are then
+  added with `oneFrom('_id', ids)`.
+
+### Decisions
+
+- The dashboard keeps the **100 kg** reorder level that chunk 6 shipped. Screen
+  37's mock says 600 kg and "3 under 20 kg cover"; those are placeholder numbers
+  from a mock drawn before the seed existed, and one low-stock rule for the whole
+  app beats two that disagree. The level is a constant (`reorderLevelKg`), so
+  moving it to settings later touches one file.
+- `ordersToday` counts by Phnom Penh day, not by UTC day, because the person
+  reading the dashboard is in Kampot.
+- The status list in the summary always carries all five statuses, zero
+  included, so the screen's filter chips do not move around as orders arrive.
+- A search that matches nothing returns an empty page with the real shop-wide
+  summary, not a 404: "no results" is an answer.
+
 ## What is left
 
 | Chunk | Scope |

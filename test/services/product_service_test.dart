@@ -13,6 +13,20 @@ ApiError _apiError(void Function() action) {
   fail('expected an ApiError, but nothing was thrown');
 }
 
+/// The conditions inside a selector. mongo_dart wraps them in `$query`, and
+/// turns two conditions on the same field into an `$and` list, so tests read
+/// them through this helper instead of guessing the shape.
+List<Map<String, dynamic>> conditionsOf(SelectorBuilder selector) {
+  final query = (selector.map[r'$query'] as Map?) ?? const <String, dynamic>{};
+  final and = query[r'$and'];
+  if (and is List) {
+    return <Map<String, dynamic>>[
+      for (final item in and) Map<String, dynamic>.from(item as Map),
+    ];
+  }
+  return <Map<String, dynamic>>[Map<String, dynamic>.from(query)];
+}
+
 void main() {
   group('the 100 kg reorder level from screen 43', () {
     test('under 100 kg is low stock', () {
@@ -148,39 +162,55 @@ void main() {
     });
 
     test('the low filter only asks for stock between 1 and 99', () {
-      final selector = adminSelector(
+      final selector = buildProductQuery(
         adminProductFilters(<String, String>{'stockLevel': 'low'}),
       );
-      final and = selector[r'$and']! as List;
-      expect(and.length, 1);
-      final stock = (and.first as Map)['stock'] as Map;
-      expect(stock[r'$gt'], 0);
-      expect(stock[r'$lt'], 100);
+      final stock =
+          conditionsOf(
+                selector,
+              ).firstWhere((c) => c.containsKey('stock'))['stock']!
+              as Map;
+      final both = conditionsOf(selector).toString();
+      expect(both, contains(r'$gt: 0'));
+      expect(both, contains(r'$lt: 100'));
+      expect(stock, isNotNull);
     });
 
     test('the in stock filter starts at 100 kg', () {
-      final selector = adminSelector(
+      final selector = buildProductQuery(
         adminProductFilters(<String, String>{'stockLevel': 'in_stock'}),
       );
-      final and = selector[r'$and']! as List;
-      final stock = (and.first as Map)['stock'] as Map;
+      final stock =
+          conditionsOf(
+                selector,
+              ).firstWhere((c) => c.containsKey('stock'))['stock']!
+              as Map;
       expect(stock[r'$gte'], 100);
     });
 
-    test('no filter means an empty selector', () {
-      expect(
-        adminSelector(adminProductFilters(<String, String>{})),
-        isEmpty,
+    test('the out filter asks for zero or less', () {
+      final selector = buildProductQuery(
+        adminProductFilters(<String, String>{'stockLevel': 'out'}),
       );
+      final stock =
+          conditionsOf(
+                selector,
+              ).firstWhere((c) => c.containsKey('stock'))['stock']!
+              as Map;
+      expect(stock[r'$lte'], 0);
     });
 
-    test('search looks in the name and the category', () {
-      final selector = adminSelector(
-        adminProductFilters(<String, String>{'q': 'jasmine'}),
+    test('no filter means an empty query', () {
+      final filters = adminProductFilters(<String, String>{});
+      final selector = buildProductQuery(filters);
+      expect(conditionsOf(selector).first, isEmpty);
+    });
+
+    test('the category filter is an exact match', () {
+      final selector = buildProductQuery(
+        adminProductFilters(<String, String>{'category': 'Jasmine'}),
       );
-      final or = ((selector[r'$and']! as List).first as Map)[r'$or']! as List;
-      expect((or.first as Map).containsKey('name'), isTrue);
-      expect((or.last as Map).containsKey('category'), isTrue);
+      expect(conditionsOf(selector).first['category'], 'Jasmine');
     });
   });
 

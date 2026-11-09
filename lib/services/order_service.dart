@@ -321,10 +321,12 @@ Future<void> _deductStock(
   final stock = product['stock'];
   if (stock is! num) return; // A product with no stock field is unlimited.
   final delta = _delta(kg, restore: false);
-  final result = await db.collection('products').updateOne(
-    where.eq('_id', product['_id']).gte('stock', kg),
-    modify.inc('stock', delta),
-  );
+  final result = await db
+      .collection('products')
+      .updateOne(
+        where.eq('_id', product['_id']).gte('stock', kg),
+        modify.inc('stock', delta),
+      );
   if (result.nMatched == 0) {
     final fresh = await db
         .collection('products')
@@ -351,14 +353,12 @@ Future<void> _restoreStock(Db db, List<_StockChange> done) async {
 }
 
 /// Puts one product's kg back (used when an order is cancelled).
-Future<void> _giveBackStock(
+Future<void> giveBackStock(
   Db db,
   ObjectId productId,
   double kg,
 ) async {
-  final product = await db
-      .collection('products')
-      .findOne(where.id(productId));
+  final product = await db.collection('products').findOne(where.id(productId));
   if (product == null || product['stock'] is! num) return;
   await db
       .collection('products')
@@ -366,6 +366,25 @@ Future<void> _giveBackStock(
         where.id(productId),
         modify.inc('stock', _delta(kg, restore: true)),
       );
+}
+
+/// Puts the kg of a cancelled order back on the shelf, item by item. The
+/// buyer's cancel and the admin's cancel both call this, so stock can never
+/// come back twice with two different rules.
+Future<void> restoreStockForOrder(
+  Db db,
+  Map<String, dynamic> order,
+) async {
+  final lines = ((order['items'] as List?) ?? const <dynamic>[])
+      .map((raw) => Map<String, dynamic>.from(raw as Map))
+      .toList();
+  for (final line in lines) {
+    await giveBackStock(
+      db,
+      line['productId'] as ObjectId,
+      (line['quantityKg'] as num).toDouble(),
+    );
+  }
 }
 
 /// Copies the address onto the order, so editing the address later never
@@ -646,16 +665,7 @@ Future<Map<String, dynamic>> cancelOrder(
     );
   }
 
-  final lines = ((order['items'] as List?) ?? const <dynamic>[])
-      .map((raw) => Map<String, dynamic>.from(raw as Map))
-      .toList();
-  for (final line in lines) {
-    await _giveBackStock(
-      db,
-      line['productId'] as ObjectId,
-      (line['quantityKg'] as num).toDouble(),
-    );
-  }
+  await restoreStockForOrder(db, order);
 
   final now = DateTime.now().toUtc();
   final history = [

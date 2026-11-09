@@ -302,41 +302,43 @@ AdminProductFilters adminProductFilters(Map<String, String> query) {
   );
 }
 
-/// Builds the Mongo selector for screen 41.
-Map<String, dynamic> adminSelector(AdminProductFilters filters) {
-  final and = <Map<String, dynamic>>[];
-  if (filters.search != null) {
-    and.add(<String, dynamic>{
-      r'$or': <Map<String, dynamic>>[
-        <String, dynamic>{
-          'name': <String, dynamic>{
-            r'$regex': RegExp.escape(filters.search!),
-            r'$options': 'i',
-          },
-        },
-        <String, dynamic>{
-          'category': <String, dynamic>{
-            r'$regex': RegExp.escape(filters.search!),
-            r'$options': 'i',
-          },
-        },
-      ],
-    });
-  }
+/// Builds the filter half of screen 41's query. The search box is not in
+/// here: it matches text in two fields and the customer's name lives in
+/// `users`, so it is resolved to a list of ids first and added with `oneFrom`.
+///
+/// The builder is used directly (`count()` and `find()`), never wrapped in
+/// `where.raw(map)`: that call stores the map but drops it from the query, so
+/// every filter would return the whole table.
+SelectorBuilder buildProductQuery(AdminProductFilters filters) {
+  final selector = SelectorBuilder();
   if (filters.category != null) {
-    and.add({'category': filters.category});
+    selector.eq('category', filters.category);
   }
   switch (filters.stockLevel) {
     case 'in_stock':
-      and.add({'stock': {r'$gte': lowStockKg}});
+      selector.gte('stock', lowStockKg);
     case 'low':
-      and.add({
-        'stock': {r'$gt': 0, r'$lt': lowStockKg},
-      });
+      selector.gt('stock', 0).lt('stock', lowStockKg);
     case 'out':
-      and.add({'stock': {r'$lte': 0}});
+      selector.lte('stock', 0);
   }
-  return and.isEmpty ? <String, dynamic>{} : {r'$and': and};
+  return selector;
+}
+
+/// The ids of the products whose name or category contains [term].
+Future<List<ObjectId>> searchProductIds(Db db, String term) async {
+  final pattern = RegExp.escape(term);
+  final byName = await db
+      .collection('products')
+      .find(where.match('name', pattern, caseInsensitive: true))
+      .toList();
+  final byCategory = await db
+      .collection('products')
+      .find(where.match('category', pattern, caseInsensitive: true))
+      .toList();
+  return <ObjectId>{
+    for (final doc in [...byName, ...byCategory]) doc['_id'] as ObjectId,
+  }.toList();
 }
 
 /// The list on screen 41: every product, active or not, with the totals the
@@ -347,16 +349,42 @@ Future<Map<String, dynamic>> adminListProducts(
 ) async {
   final filters = adminProductFilters(query);
   final collection = db.collection('products');
-  final selector = adminSelector(filters);
+  final selector = buildProductQuery(filters);
+
+  if (filters.search != null) {
+    final ids = await searchProductIds(db, filters.search!);
+    if (ids.isEmpty) {
+      return <String, dynamic>{
+        'items': const <Map<String, dynamic>>[],
+        'total': 0,
+        'page': filters.page,
+        'limit': filters.limit,
+        'summary': await _productSummary(db),
+      };
+    }
+    selector.oneFrom('_id', ids);
+  }
+
   final total = await collection.count(selector);
-  final paged = where
-      .raw(selector)
+  final paged = selector
       .sortBy('name')
       .skip((filters.page - 1) * filters.limit)
       .limit(filters.limit);
   final docs = await collection.find(paged).toList();
 
-  final everything = await collection.find().toList();
+  return <String, dynamic>{
+    'items': docs.map(adminProductView).toList(),
+    'total': total,
+    'page': filters.page,
+    'limit': filters.limit,
+    'summary': await _productSummary(db),
+  };
+}
+
+/// The numbers in the header of screen 41 and the cards of screen 43. They
+/// count the whole shop, not the filtered page.
+Future<Map<String, dynamic>> _productSummary(Db db) async {
+  final everything = await db.collection('products').find().toList();
   final totalKg = everything.fold<int>(
     0,
     (sum, doc) => sum + ((doc['stock'] as num?)?.toInt() ?? 0),
@@ -368,18 +396,11 @@ Future<Map<String, dynamic>> adminListProducts(
   final out = everything
       .where((doc) => ((doc['stock'] as num?)?.toInt() ?? 0) <= 0)
       .length;
-
   return <String, dynamic>{
-    'items': docs.map(adminProductView).toList(),
-    'total': total,
-    'page': filters.page,
-    'limit': filters.limit,
-    'summary': <String, dynamic>{
-      'products': everything.length,
-      'totalKg': totalKg,
-      'lowStock': low,
-      'outOfStock': out,
-    },
+    'products': everything.length,
+    'totalKg': totalKg,
+    'lowStock': low,
+    'outOfStock': out,
   };
 }
 
@@ -485,10 +506,10 @@ Future<Map<String, dynamic>> restockProduct(
   final now = DateTime.now().toUtc();
   final result = await collection.updateOne(
     where.id(id),
-    modify
-        .set('stock', stock)
-        .set('restockedAt', now)
-        .push('restockHistory', <String, dynamic>{'stock': stock, 'at': now}),
+    modify.set('stock', stock).set('restockedAt', now).push(
+      'restockHistory',
+      <String, dynamic>{'stock': stock, 'at': now},
+    ),
   );
   if (result.nMatched == 0) {
     throw const ApiError(404, 'Product not found');
