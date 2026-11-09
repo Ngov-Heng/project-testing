@@ -1,16 +1,87 @@
+// WHY: Holds every cart rule so the routes stay thin (routes only read the
+// body and check types; the rules live here).
+// Where it sits in the flow: routes/api/cart/* call these functions, and they
+// read and write the "carts" collection plus the "products" collection.
+// One cart document per buyer: _id = the buyer's user id,
+// items: [{ productId, quantityKg }].
+
+import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/pricing_service.dart';
+import 'package:faheng_api/services/settings_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-double _dollars(int cents) => cents / 100;
+/// Smallest quantity we accept, in kg (0.01 kg = 10 grams).
+const _minQuantityKg = 0.01;
 
-/// Builds the cart screen data for [userId] with live prices and totals.
-Future<Map<String, dynamic>> buildCartView(Db db, ObjectId userId) async {
+/// Keeps kg to at most 2 decimals so 2.500000001 does not reach the database.
+double _roundKg(num kg) => (kg * 100).round() / 100;
+
+/// Reads the saved items as a new list we are allowed to change in Dart.
+Future<List<Map<String, dynamic>>> _readItems(
+  Db db,
+  ObjectId userId,
+) async {
   final cart = await db.collection('carts').findOne(where.id(userId));
   final saved = (cart?['items'] as List?) ?? const [];
-
-  final ids = [
-    for (final item in saved) (item as Map)['productId'] as ObjectId,
+  return [
+    for (final item in saved) Map<String, dynamic>.from(item as Map),
   ];
+}
+
+/// Writes the whole item list back. `upsert: true` creates the cart document
+/// on the first add, with _id taken from the filter (the user id).
+Future<void> _saveItems(
+  Db db,
+  ObjectId userId,
+  List<Map<String, dynamic>> items,
+) async {
+  await db
+      .collection('carts')
+      .updateOne(where.id(userId), modify.set('items', items), upsert: true);
+}
+
+/// Loads one product that buyers are allowed to see, or fails with 404.
+Future<Map<String, dynamic>> _activeProduct(
+  Db db,
+  ObjectId productId,
+) async {
+  final product = await db
+      .collection('products')
+      .findOne(where.id(productId).eq('isActive', true));
+  if (product == null) throw const ApiError(404, 'Product not found');
+  return product;
+}
+
+/// Refuses a quantity bigger than what the shop has.
+/// The stock field is called `stock` in the products collection. Products
+/// created before it existed have no field, so there is nothing to check.
+void _checkStock(Map<String, dynamic> product, double wantedKg) {
+  final stock = product['stock'];
+  if (stock is! num) return;
+  if (wantedKg > stock) {
+    throw ApiError(
+      409,
+      'Not enough stock of ${product['name']}: '
+      '${_roundKg(stock)} kg left',
+    );
+  }
+}
+
+/// Finds the item for [productId], or -1 when the product is not in the cart.
+int _indexOf(List<Map<String, dynamic>> items, ObjectId productId) {
+  return items.indexWhere(
+    (item) => (item['productId'] as ObjectId).oid == productId.oid,
+  );
+}
+
+/// Builds the cart screen data for [userId] with live prices and totals.
+///
+/// Items whose product was deleted or deactivated are skipped, so a buyer
+/// never sees a price for a product that is no longer for sale.
+Future<Map<String, dynamic>> buildCartView(Db db, ObjectId userId) async {
+  final saved = await _readItems(db, userId);
+
+  final ids = [for (final item in saved) item['productId'] as ObjectId];
   final products = ids.isEmpty
       ? <Map<String, dynamic>>[]
       : await db
@@ -23,34 +94,135 @@ Future<Map<String, dynamic>> buildCartView(Db db, ObjectId userId) async {
   final lineCents = <int>[];
   var totalKg = 0.0;
 
-  for (final entry in saved) {
-    final item = entry as Map;
-    final productId = (item['productId'] as ObjectId).oid;
-    final product = byId[productId];
+  for (final item in saved) {
+    final productId = item['productId'] as ObjectId;
+    final product = byId[productId.oid];
     if (product == null) continue;
 
-    final kg = item['quantityKg'] as num;
+    final kg = (item['quantityKg'] as num).toDouble();
     final unitCents = toCents(product['pricePerKg'] as num);
     final line = (unitCents * kg).round();
 
     lineCents.add(line);
     totalKg += kg;
     items.add({
-      'productId': productId,
+      'productId': productId.oid,
       'name': product['name'],
       'image': product['image'],
-      'pricePerKg': _dollars(unitCents),
+      'pricePerKg': toDollars(unitCents),
       'quantityKg': kg,
-      'lineTotal': _dollars(line),
+      'lineTotal': toDollars(line),
     });
   }
 
-  final totals = calculateTotals(lineCents: lineCents, totalKg: totalKg);
+  // The discount and the delivery fee come from the settings document, so
+  // the admin can change them on screen 48 without a new deployment.
+  final rules = await loadPricingRules(db);
+  final totals = calculateTotals(
+    lineCents: lineCents,
+    totalKg: totalKg,
+    thresholdKg: rules.thresholdKg,
+    discountPercent: rules.percent,
+    flatFeeCents: rules.deliveryFeeCents,
+    discountEnabled: rules.discountEnabled,
+  );
   return {
     'items': items,
     'totalKg': totalKg,
-    'subtotal': _dollars(totals.subtotalCents),
-    'discount': _dollars(totals.discountCents),
-    'total': _dollars(totals.totalCents),
+    'subtotal': toDollars(totals.subtotalCents),
+    'discount': toDollars(totals.discountCents),
+    'deliveryFee': toDollars(totals.deliveryFeeCents),
+    'total': toDollars(totals.totalCents),
+    'grandTotal': toDollars(totals.grandTotalCents),
   };
+}
+
+/// Adds [quantityKg] of a product. Adding a product that is already in the
+/// cart adds to the quantity instead of creating a second line.
+///
+/// Returns the updated cart, so the app can refresh with one response.
+Future<Map<String, dynamic>> addCartItem(
+  Db db,
+  ObjectId userId,
+  ObjectId productId,
+  num quantityKg,
+) async {
+  final kg = _roundKg(quantityKg);
+  if (kg < _minQuantityKg) {
+    throw const ApiError(400, 'quantityKg must be greater than 0');
+  }
+
+  final product = await _activeProduct(db, productId);
+  final items = await _readItems(db, userId);
+
+  final index = _indexOf(items, productId);
+  final currentKg = index == -1
+      ? 0.0
+      : (items[index]['quantityKg'] as num).toDouble();
+  final newKg = _roundKg(currentKg + kg);
+  _checkStock(product, newKg);
+
+  if (index == -1) {
+    items.add({'productId': productId, 'quantityKg': newKg});
+  } else {
+    items[index]['quantityKg'] = newKg;
+  }
+
+  await _saveItems(db, userId, items);
+  return buildCartView(db, userId);
+}
+
+/// Sets the quantity of a product that is already in the cart.
+///
+/// Returns the updated cart.
+Future<Map<String, dynamic>> changeCartItemKg(
+  Db db,
+  ObjectId userId,
+  ObjectId productId,
+  num quantityKg,
+) async {
+  final kg = _roundKg(quantityKg);
+  if (kg < _minQuantityKg) {
+    throw const ApiError(400, 'quantityKg must be greater than 0');
+  }
+
+  final items = await _readItems(db, userId);
+  final index = _indexOf(items, productId);
+  if (index == -1) throw const ApiError(404, 'Item is not in the cart');
+
+  final product = await _activeProduct(db, productId);
+  _checkStock(product, kg);
+
+  items[index]['quantityKg'] = kg;
+  await _saveItems(db, userId, items);
+  return buildCartView(db, userId);
+}
+
+/// Removes one product line from the cart.
+///
+/// Returns the updated cart.
+Future<Map<String, dynamic>> removeCartItem(
+  Db db,
+  ObjectId userId,
+  ObjectId productId,
+) async {
+  final items = await _readItems(db, userId);
+  final before = items.length;
+  items.removeWhere(
+    (item) => (item['productId'] as ObjectId).oid == productId.oid,
+  );
+  if (items.length == before) {
+    throw const ApiError(404, 'Item is not in the cart');
+  }
+
+  await _saveItems(db, userId, items);
+  return buildCartView(db, userId);
+}
+
+/// Empties the cart (used by "clear cart" and after checkout).
+///
+/// Returns the empty cart.
+Future<Map<String, dynamic>> clearCart(Db db, ObjectId userId) async {
+  await _saveItems(db, userId, <Map<String, dynamic>>[]);
+  return buildCartView(db, userId);
 }
