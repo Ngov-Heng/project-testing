@@ -1,85 +1,31 @@
+// WHY: Screen 09 (sign up) collects full name, one contact, a password and
+// "I'm buying for" (household or business). The account it creates is not
+// usable yet: this chunk's rule is verify first, log in after.
+// Where it sits in the flow: the field checks, the duplicate check and the
+// first 6-digit code all live in auth_service; this file only reads JSON and
+// answers 201.
+
+import 'dart:convert';
+
 import 'package:dart_frog/dart_frog.dart';
-import 'package:faheng_api/services/password_service.dart';
-import 'package:faheng_api/services/validators.dart';
+import 'package:faheng_api/services/api_error.dart';
+import 'package:faheng_api/services/auth_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-Response _error(int status, String message) =>
-    Response.json(statusCode: status, body: {'error': message});
-
-String? _text(Object? value) {
-  if (value is! String) return null;
-  final trimmed = value.trim();
-  return trimmed.isEmpty ? null : trimmed;
-}
-
+/// Creates an account and sends the code for screen 10.
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.post) {
     return Response(statusCode: 405);
   }
 
-  Object? body;
+  final raw = await context.request.body();
+  final Object? body;
   try {
-    body = await context.request.json();
+    body = jsonDecode(raw);
   } catch (_) {
-    return _error(400, 'Body must be valid JSON');
-  }
-  if (body is! Map<String, dynamic>) {
-    return _error(400, 'Body must be a JSON object');
+    return jsonError(400, 'Body must be valid JSON');
   }
 
-  final name = _text(body['name']);
-  final emailRaw = _text(body['email']);
-  final phoneRaw = _text(body['phone']);
-  final password = body['password'];
-
-  if (name == null) return _error(400, 'name is required');
-  if (password is! String || password.length < 8) {
-    return _error(400, 'password must be at least 8 characters');
-  }
-  if (emailRaw == null && phoneRaw == null) {
-    return _error(400, 'email or phone is required');
-  }
-
-  final email = emailRaw == null ? null : normalizeEmail(emailRaw);
-  final phone = phoneRaw == null ? null : normalizePhone(phoneRaw);
-  if (email != null && !isValidEmail(email)) {
-    return _error(400, 'email is not valid');
-  }
-  if (phone != null && !isValidPhone(phone)) {
-    return _error(400, 'phone is not valid');
-  }
-
-  final users = context.read<Db>().collection('users');
-  final existing = await users.findOne({
-    r'$or': [
-      if (email != null) {'email': email},
-      if (phone != null) {'phone': phone},
-    ],
-  });
-  if (existing != null) {
-    return _error(409, 'An account with this email or phone already exists');
-  }
-
-  final id = ObjectId();
-  final result = await users.insertOne({
-    '_id': id,
-    'name': name,
-    if (email != null) 'email': email,
-    if (phone != null) 'phone': phone,
-    'passwordHash': hashPassword(password),
-    'createdAt': DateTime.now().toUtc(),
-  });
-  if (!result.isSuccess) {
-    return _error(409, 'An account with this email or phone already exists');
-  }
-
-  return Response.json(
-    statusCode: 201,
-    body: {
-      'id': id.oid,
-      'name': name,
-      if (email != null) 'email': email,
-      if (phone != null) 'phone': phone,
-    },
-  );
+  final created = await registerAccount(context.read<Db>(), body);
+  return Response.json(statusCode: 201, body: created);
 }
