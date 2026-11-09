@@ -453,6 +453,73 @@ Three properties that matter:
   links back to a single quote, and a buyer who has three open requests needs to
   find them somewhere.
 
+## Chunk 10 - admin customers and reports
+
+### Endpoints
+
+| Method | Path | Screen | What it does |
+|---|---|---|---|
+| GET | `/api/admin/customers?q&customerType&page&limit` | 45 | one page of buyers plus the counts in the subtitle |
+| GET | `/api/admin/customers/:id` | 46 | contact details, the three cards, the five newest orders |
+| GET | `/api/admin/customers/:id/orders?page&limit` | 46 "View all" | the rest of that customer's history |
+| GET | `/api/admin/reports?from&to` | 49 | revenue per day, top products, best customers |
+
+### One rule that shapes both screens
+
+**A cancelled order is not a purchase.** It is left out of the order count, the
+money, the average, the last order date and the order history, so screen 45's
+four columns, screen 46's three cards and screen 49's revenue card all tell the
+same story. Screen 49 prints why: "Cancelled orders not counted". The report
+still *reports* what it ignored (`summary.cancelled`, `summary.cancelledValue`),
+because a report that hides the rows it dropped cannot be checked.
+
+### Screen 45
+
+- Only buyers are customers: `role != admin`. The owner never appears in the
+  list, and opening the owner's own id answers 404.
+- `customerType` is `all`, `business` or `household`; anything else is a 400.
+- The subtitle counts the whole shop, not the filtered page.
+- The page is ordered **by name**. The mock is ordered by last order date, but
+  that value lives in another collection: sorting by it would mean loading
+  every order in the shop to sort eight rows. Paginate first, then sort the
+  page, is the honest version.
+- Orders and addresses for a whole page are fetched in one query each and
+  grouped in Dart, so eight rows do not become sixteen round trips.
+
+### Screen 46
+
+- `totalSpent` is the sum of `grandTotalCents`, `averageOrder` is that divided
+  by the order count and rounded once in cents (the mock's 5126.80 / 11 =
+  466.07).
+- The address shown is the default one, falling back to the newest.
+- The history shows the five newest and `showing` / `totalOrders` so the footer
+  "Showing 5 of 11 orders" is not a guess.
+
+### Screen 49
+
+- No range means the last **seven Phnom Penh days, today included**, which is
+  what the picker starts on. `from` alone or `to` alone also work.
+- `from > to` is a 400, a fake date is a 400, and a range longer than a year is
+  a 400.
+- The chart is zero filled: every day of the range gets a point, otherwise the
+  line would jump from Tuesday to Friday and lie about the week. The daily
+  points always add up to the revenue card.
+- Top products are by **kg sold**, best customers by **spend**, both top five.
+- The whole report is one query for orders, one for users and one for addresses,
+  grouped in Dart. Four aggregation pipelines would be faster on a million
+  orders and much harder to explain; a rice shop has thousands.
+
+### Decisions
+
+- No export endpoint (the screen has no Export button on 49; screen 38's Export
+  is a client-side CSV of a list it already has).
+- The report has no "compare with last week" figures; the frames do not show
+  one, and the dashboard already answers "vs yesterday".
+- Customers are not given an admin-editable "notes" field: nothing on 45 or 46
+  offers one.
+- `GET /api/admin/customers/:id/orders` exists only so "View all orders" has
+  somewhere to go; it returns the same row shape as screen 38.
+
 ## What is left
 
 | Chunk | Scope |
@@ -462,7 +529,7 @@ Three properties that matter:
 | 7 | admin orders + dashboard + delivery schedule (reuses `orderTransitions`) |
 | 8 | done: reviews from delivered orders, rating block, one per product per order |
 | 9 | done: bulk quotes through four statuses, notifications from orders and quotes |
-| 10 | admin customers + reports |
+| 10 | done: customers list, customer page, sales report |
 | 11 | PayPal sandbox (sets `paymentStatus: paid`) |
 
 Left alone on purpose: `/health`, `/api/db_check`, wishlist, products route shape.
