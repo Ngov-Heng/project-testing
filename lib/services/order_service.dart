@@ -282,6 +282,9 @@ Map<String, dynamic> orderView(Map<String, dynamic> order) {
       for (final entry in history)
         {'status': entry['status'], 'at': entry['at']},
     ],
+    // Chunk 11: a PayPal order carries the moment the money arrived.
+    if (order['paidAt'] is DateTime)
+      'paidAt': (order['paidAt'] as DateTime).toIso8601String(),
     if (order['cancelReason'] != null) 'cancelReason': order['cancelReason'],
     if (order['cancelReasonCode'] != null)
       'cancelReasonCode': order['cancelReasonCode'],

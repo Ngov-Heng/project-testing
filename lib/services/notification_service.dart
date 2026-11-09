@@ -19,6 +19,8 @@ const notificationTypes = <String>[
   'order_delivered',
   'order_cancelled',
   'quote_ready',
+  // Chunk 11: a PayPal capture told the buyer their money arrived.
+  'payment_received',
 ];
 
 /// How a delivery window is printed in a notification: "Arriving today,

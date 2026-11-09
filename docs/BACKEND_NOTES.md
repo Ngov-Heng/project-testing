@@ -520,16 +520,80 @@ because a report that hides the rows it dropped cannot be checked.
 - `GET /api/admin/customers/:id/orders` exists only so "View all orders" has
   somewhere to go; it returns the same row shape as screen 38.
 
-## What is left
+## Chunk 11 - PayPal (sandbox)
+
+### Endpoints
+
+| Method | Path | Screen | What it does |
+|---|---|---|---|
+| POST | `/api/orders/:id/payments/paypal` | 21a "Pay with PayPal" | opens a payment, returns the approval link, 201 |
+| GET | `/api/orders/:id/payments/paypal` | 21b waiting | has PayPal answered yet? |
+| POST | `/api/orders/:id/payments/paypal/capture` | 23b / 24 | takes the money, or fails and frees the stock |
+
+### What is real and what is not
+
+There is no PayPal sandbox account in this project and there must never be a
+secret in the repository, so the two calls that would reach PayPal's servers are
+made locally against a `payments` collection. Everything around them is real:
+
+- the order, the amount (the grand total the buyer saw on 21a), the delivery fee
+  inside it;
+- the state machine `created -> captured | failed`, with PayPal's own
+  vocabulary (order id, approval link, capture);
+- the guards: a cash order answers 400 "This order is paid on delivery", a
+  cancelled order 409, a paid order 409, someone else's order 404;
+- the stock: a failed payment puts the kg back on the shelf;
+- the notification: "Payment received for FH-1042 - $170.20 paid with PayPal."
+
+When real credentials exist, only `_sandboxCreate` and `_sandboxCapture` change.
+The routes, the request bodies and the responses already speak PayPal's
+language, which is why swapping the provider does not move a single screen.
+
+### A failed payment cancels the order
+
+Screen 24 says "Your order has not been placed". Leaving an unpaid order
+`pending` forever would hold stock hostage and make that sentence a lie, so a
+declined capture does exactly what a cancellation does: status `cancelled`,
+`cancelReason: "Payment failed"`, `cancelReasonCode: "payment_failed"`,
+`statusHistory` appended, and `restoreStockForOrder` returns the kg. "Try again"
+therefore means placing the order again, from the cart the app still shows.
+
+`order.paymentStatus` keeps its two old values (`unpaid`, `paid`), so chunks 3
+and 7 did not have to change; the attempts live in `payments` with
+`created | captured | failed`, and the order gains `paidAt` plus a small
+`payment` summary. Both are additions, never replacements.
+
+### Decisions
+
+- Tapping "Pay with PayPal" twice re-uses the open payment instead of opening a
+  second one; the buyer gets the same `SBX-...` id back.
+- `approved` defaults to **true** in the capture body, because the app only gets
+  there after the buyer pressed the button. Sending `approved: false` is how the
+  failed-payment screen is reached without a real declined card.
+- Dismissing the PayPal window is *not* a failure: the order stays unpaid and
+  can be paid later, because nothing was declined.
+- The capture path checks the payment's own state before the order's, so a
+  double tap is answered "This payment was already captured" rather than the
+  less useful "This order is already paid".
+- The admin still cannot mark a PayPal order paid by hand (chunk 7's rule); the
+  capture call is the only thing that writes `paid` for PayPal.
+- Sandbox payment ids are prefixed `SBX-` so nobody mistakes one for a real
+  PayPal order in a screenshot or a viva.
+
+## Where the eleven chunks ended
 
 | Chunk | Scope |
 |---|---|
+| 1 | done: skeleton, error shape, health, db_check |
+| 2 | done: settings and the public settings view |
+| 3 | done: cart, checkout, orders, cancel, reorder, invoice |
+| 4 | done: profile, addresses, wishlist kept as it was |
 | 5 | done: verified flag, 6-digit code, forgot/reset password, change password, admin login, customerType at sign-up |
-| 6 | done: products/categories admin, stock and restock, seed (12 products, 4 categories, 3 low stock, 3 featured) |
-| 7 | admin orders + dashboard + delivery schedule (reuses `orderTransitions`) |
+| 6 | done: products/categories admin, stock and restock, seed |
+| 7 | done: admin orders, dashboard, delivery schedule |
 | 8 | done: reviews from delivered orders, rating block, one per product per order |
 | 9 | done: bulk quotes through four statuses, notifications from orders and quotes |
 | 10 | done: customers list, customer page, sales report |
-| 11 | PayPal sandbox (sets `paymentStatus: paid`) |
+| 11 | done: PayPal sandbox - create, capture, failed payment, stock back |
 
 Left alone on purpose: `/health`, `/api/db_check`, wishlist, products route shape.
