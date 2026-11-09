@@ -310,6 +310,149 @@ fluent methods and use it directly. Both services now expose
 - A search that matches nothing returns an empty page with the real shop-wide
   summary, not a 404: "no results" is an answer.
 
+## Chunk 8 - reviews
+
+### Endpoints
+
+| Method | Path | Screen | What it does |
+|---|---|---|---|
+| GET | `/api/reviews?productId=...&page&limit` | 17 | one product, its rating block and a page of reviews (public) |
+| GET | `/api/orders/:id/reviews` | 30 | each item of the order, whether it can still be rated, the review it has |
+| POST | `/api/orders/:id/reviews` | 30 | write one review, 201 |
+
+### Rules that only live here
+
+- A review can only be written from an order that is **delivered**, and only
+  for a product that is **in that order**. Together those two checks are what
+  make the "Verified purchase" tag true, so it is computed, not stored as an
+  option: `verifiedPurchase` is always true on the way out.
+- One review **per product per order**, not per product overall: a customer who
+  buys the same rice twice can rate both deliveries, and re-sending the same
+  one answers 409.
+- Stars are a whole number 1 to 5. `"5"` as text is refused, and so is `3.5`:
+  a client sending either is a bug worth seeing in the test run.
+- The comment is optional, trimmed, at most 300 characters, and stored as
+  `null` when empty. Empty string and null mean the same thing to a screen, so
+  only one of them is ever written.
+- The summary counts **every** review of the product, not the page: 18 reviews
+  with `limit=20` and 30 reviews with `limit=20` both show the true average.
+- The average is rounded to one decimal on the server, because the mock prints
+  "4.5" and two clients rounding differently would disagree.
+- `canReview` is per item, not per order, so screen 30 can show four filled
+  stars for the rice that was rated and an empty row for the one that was not.
+
+### The path that was not used
+
+`/api/products/:id/reviews` is the prettier URL, and it is impossible here:
+Dart Frog cannot hold `routes/api/products/[id].dart` and
+`routes/api/products/[id]/` at the same time, and `[id].dart` has been the
+product detail since chunk 6. Moving it would have changed a delivered file for
+the sake of a URL, so the list lives at `/api/reviews?productId=...`. The
+order side *is* nested, `/api/orders/:id/reviews`, because that folder was
+already a directory with `cancel.dart` and `reorder.dart` in it.
+
+### Decisions
+
+- No admin moderation screen exists in the 57 frames, so there is no admin
+  review route. Deleting or hiding a review would need a screen first.
+- The product document is not given an `averageRating` field. The number is one
+  query away, and a stored copy would be wrong the moment a review is added.
+  Screen 12 can be fed from `/api/reviews` if a later chunk wants stars on the
+  product page.
+- No unique index is created on `(productId, orderId)`. The service checks
+  first and answers 409; an index would only matter if two requests arrived in
+  the same millisecond, and creating indexes belongs in a migration, not in a
+  request.
+- The review keeps `orderNumber`, `productName` and `authorName` copies. A
+  review is a small historical record: renaming a product should not rewrite
+  what a customer said about it.
+
+## Chunk 9 - quotes and notifications
+
+### Endpoints
+
+| Method | Path | Screen | What it does |
+|---|---|---|---|
+| POST | `/api/quotes` | 25 | a buyer asks for a price on 150 kg or more, 201 |
+| GET | `/api/quotes` | - | this buyer's requests, newest first |
+| GET | `/api/quotes/:id` | 31 | one request, with its price once the admin answered |
+| PATCH | `/api/quotes/:id/respond` | 31 | Accept or Decline a priced quote |
+| GET | `/api/admin/quotes` | 47 | every request, with search, status filter and counts |
+| PATCH | `/api/admin/quotes/:id` | 47 | send (or re-send) the price per kg, and tell the buyer |
+| GET | `/api/notifications` | 31 | the list, newest first, plus the unread count |
+| GET | `/api/notifications/unread-count` | Home bell | the number only |
+| PATCH | `/api/notifications/read-all` | 31 | "Mark all as read" |
+| PATCH | `/api/notifications/:id/read` | 31 | one row loses its dot |
+
+### One record, four statuses
+
+`new -> quoted -> accepted | declined`. Nothing else moves it:
+
+- the buyer creates it (`new`);
+- the admin sends a price (`quoted`) and the buyer gets a notification;
+- the buyer accepts or declines. Only a `quoted` request can be answered: a
+  `new` one answers 409 "This request has no price yet", an answered one says
+  which status it already has.
+- the admin may re-price while the request is `new` or `quoted` (a typo should
+  be fixable), but not after the buyer answered (409).
+
+### Rules that only live here
+
+- 150 kg is the minimum, because screen 25 prints it under the quantity box.
+- The product must be active (404) and the address must be the buyer's (404,
+  never 403: a stranger learns nothing about somebody else's address).
+- The note is optional, trimmed, at most 300 characters, `null` when empty.
+- The shop price **at the moment of the request** is copied onto the quote, so
+  screen 47 can print "Shop price $1.48 per kg, minus 10% bulk discount" and
+  prefill the suggested price without another call, and a later price change
+  never rewrites an old request.
+- Money is stored in integer cents (`pricePerKgCents`, `quotedTotalCents`) and
+  turned back into dollars only on the way out, like every chunk since 3. The
+  total is `pricePerKgCents x quantityKg`, rounded once.
+- Accepting a quote does **not** create an order: no screen or rule says it
+  should, and inventing that would also invent stock checks, payment and a
+  delivery slot.
+- Request numbers use their own counter (`counters._id = "quotes"`) and the same
+  atomic `$inc` as order numbers, so two buyers asking at once never share a
+  number. QR-006 is three digits, then QR-1001 keeps growing.
+
+### Notifications
+
+Written in exactly one place, `addNotification`, so every notification in the
+database came out of one function. Two producers today:
+
+- **orders**: `createOrder` writes "Order FH-1042 placed", and every admin
+  status change writes the next line of the story - being packed, on the way
+  (with the window's hours), delivered ("How was your rice?"), cancelled
+  ("Nothing was charged"). The wording is the pure function
+  `orderNotification`, because the screen is judged on those sentences.
+- **quotes**: `sendQuote` writes "Your quote is ready - Jasmine rice, 200 kg at
+  $1.08 per kg. Total $216.00."
+
+Three properties that matter:
+
+1. `addNotification` swallows its own errors. A buyer who cannot be told about
+   an order must not stop the order from being placed or moved.
+2. The Accept / Decline buttons are **not** stored on the notification. The
+   list joins the quote's status on every read (`canRespond`), so a quote
+   answered on another device makes the buttons disappear here too.
+3. The unread count comes back with the list, so screen 31 needs one request;
+   the Home bell gets its own tiny endpoint and does not download the list.
+
+### Decisions
+
+- No push notifications, no email. The frames show an in-app list; the bell and
+  the list are what the API can honestly serve. The push toggle on screen 33 is
+  a device permission, not a column in this database.
+- The admin is not notified of anything. No admin screen shows notifications;
+  screen 47's "new" count already answers "is there work waiting?".
+- The buyer is not told about their own cancellation, because they just did it.
+- Notification wording is plain and stored as text, not stored as a template id.
+  A template layer would be right for ten languages; there is one.
+- `GET /api/quotes` exists although no frame draws the list: the notification
+  links back to a single quote, and a buyer who has three open requests needs to
+  find them somewhere.
+
 ## What is left
 
 | Chunk | Scope |
@@ -317,8 +460,8 @@ fluent methods and use it directly. Both services now expose
 | 5 | done: verified flag, 6-digit code, forgot/reset password, change password, admin login, customerType at sign-up |
 | 6 | done: products/categories admin, stock and restock, seed (12 products, 4 categories, 3 low stock, 3 featured) |
 | 7 | admin orders + dashboard + delivery schedule (reuses `orderTransitions`) |
-| 8 | reviews (one per product per delivered order) |
-| 9 | quotes + notifications |
+| 8 | done: reviews from delivered orders, rating block, one per product per order |
+| 9 | done: bulk quotes through four statuses, notifications from orders and quotes |
 | 10 | admin customers + reports |
 | 11 | PayPal sandbox (sets `paymentStatus: paid`) |
 

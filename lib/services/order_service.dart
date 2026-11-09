@@ -10,6 +10,7 @@
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/cart_service.dart';
+import 'package:faheng_api/services/notification_service.dart';
 import 'package:faheng_api/services/pricing_service.dart';
 import 'package:faheng_api/services/settings_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -581,6 +582,10 @@ Future<Map<String, dynamic>> createOrder(
         modify.set('items', <Map<String, dynamic>>[]),
         upsert: true,
       );
+
+  // Screen 31 gets "Order FH-1042 placed" the moment the order exists. The
+  // helper swallows its own errors, so a notification can never fail an order.
+  await notifyOrder(db, doc);
 
   return orderView(doc);
 }

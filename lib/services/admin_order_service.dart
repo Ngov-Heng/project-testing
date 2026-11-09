@@ -9,6 +9,7 @@
 // buyer's tracking screen (07/26) reads.
 
 import 'package:faheng_api/services/api_error.dart';
+import 'package:faheng_api/services/notification_service.dart';
 import 'package:faheng_api/services/order_service.dart';
 import 'package:faheng_api/services/product_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -429,6 +430,13 @@ Future<Map<String, dynamic>> changeOrderStatus(
         .set('statusHistory', history)
         .set('updatedAt', now),
   );
+
+  // Screen 31 tells the buyer what happened: "Order FH-1042 is on the way".
+  final moved = Map<String, dynamic>.from(order)
+    ..['status'] = next
+    ..['statusHistory'] = history;
+  await notifyOrder(db, moved);
+
   return adminOrderDetail(db, rawId);
 }
 
