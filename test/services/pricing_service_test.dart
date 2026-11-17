@@ -58,4 +58,25 @@ void main() {
     expect(totals.deliveryFeeCents, 500);
     expect(totals.grandTotalCents, 8500);
   });
+
+  test('the admin switch on screen 48 turns the discount off', () {
+    final totals = calculateTotals(
+      lineCents: [20000],
+      totalKg: 200,
+      discountEnabled: false,
+    );
+    expect(totals.discountCents, 0);
+    expect(totals.totalCents, 20000);
+    expect(totals.deliveryFeeCents, 300);
+    expect(totals.grandTotalCents, 20300);
+  });
+
+  test('cart screen total and checkout grand total stay two numbers', () {
+    final totals = calculateTotals(lineCents: [20000, 4000], totalKg: 200);
+    // 240.00 - 10% = 216.00 on the cart screen.
+    expect(totals.totalCents, 21600);
+    // 216.00 + 3.00 delivery = 219.00 on the checkout screen.
+    expect(totals.grandTotalCents, 21900);
+    expect(totals.grandTotalCents - totals.totalCents, 300);
+  });
 }

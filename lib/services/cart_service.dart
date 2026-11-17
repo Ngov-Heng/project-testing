@@ -11,10 +11,29 @@ import 'package:faheng_api/services/settings_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
 /// Smallest quantity we accept, in kg (0.01 kg = 10 grams).
-const _minQuantityKg = 0.01;
+const minQuantityKg = 0.01;
 
 /// Keeps kg to at most 2 decimals so 2.500000001 does not reach the database.
-double _roundKg(num kg) => (kg * 100).round() / 100;
+double roundKg(num kg) => (kg * 100).round() / 100;
+
+/// "10 kg" for a whole amount, "10.5 kg" otherwise - the same wording the
+/// order messages use, so a buyer never sees "10.0 kg left".
+String kgLabel(num kg) {
+  final rounded = roundKg(kg);
+  if (rounded == rounded.roundToDouble()) return rounded.round().toString();
+  return rounded.toString();
+}
+
+/// The kg typed on screens 04 (quantity chips and custom amount) and 05 (the
+/// plus and minus buttons), or a 400 when it is not a quantity. Pure, so the
+/// rule can be tested without a database.
+double checkedQuantityKg(num quantityKg) {
+  final kg = roundKg(quantityKg);
+  if (kg < minQuantityKg) {
+    throw const ApiError(400, 'quantityKg must be greater than 0');
+  }
+  return kg;
+}
 
 /// Reads the saved items as a new list we are allowed to change in Dart.
 Future<List<Map<String, dynamic>>> _readItems(
@@ -55,14 +74,13 @@ Future<Map<String, dynamic>> _activeProduct(
 /// Refuses a quantity bigger than what the shop has.
 /// The stock field is called `stock` in the products collection. Products
 /// created before it existed have no field, so there is nothing to check.
-void _checkStock(Map<String, dynamic> product, double wantedKg) {
-  final stock = product['stock'];
-  if (stock is! num) return;
-  if (wantedKg > stock) {
+/// Pure, so both the rule and the wording can be tested.
+void ensureStockKg(num? stockKg, String? name, double wantedKg) {
+  if (stockKg is! num) return;
+  if (wantedKg > stockKg) {
     throw ApiError(
       409,
-      'Not enough stock of ${product['name']}: '
-      '${_roundKg(stock)} kg left',
+      'Not enough stock of $name: ${kgLabel(stockKg)} kg left',
     );
   }
 }
@@ -72,6 +90,59 @@ int _indexOf(List<Map<String, dynamic>> items, ObjectId productId) {
   return items.indexWhere(
     (item) => (item['productId'] as ObjectId).oid == productId.oid,
   );
+}
+
+/// A copy we are allowed to change, so the caller's list is never mutated.
+List<Map<String, dynamic>> _copy(List<Map<String, dynamic>> items) => [
+  for (final item in items) Map<String, dynamic>.from(item),
+];
+
+/// The next item list with [kg] added to the line of [productId], creating the
+/// line on the first add. One product is always one line, never two. Pure.
+List<Map<String, dynamic>> withQuantityAdded(
+  List<Map<String, dynamic>> items,
+  ObjectId productId,
+  double kg,
+) {
+  final next = _copy(items);
+  final index = _indexOf(next, productId);
+  if (index == -1) {
+    next.add(<String, dynamic>{'productId': productId, 'quantityKg': kg});
+    return next;
+  }
+  final current = (next[index]['quantityKg'] as num).toDouble();
+  next[index]['quantityKg'] = roundKg(current + kg);
+  return next;
+}
+
+/// The item list with one line set to [kg]. 404 when the product is not in the
+/// cart, because the change endpoint may only change a line that exists. Pure.
+List<Map<String, dynamic>> withQuantitySet(
+  List<Map<String, dynamic>> items,
+  ObjectId productId,
+  double kg,
+) {
+  final next = _copy(items);
+  final index = _indexOf(next, productId);
+  if (index == -1) throw const ApiError(404, 'Item is not in the cart');
+  next[index]['quantityKg'] = kg;
+  return next;
+}
+
+/// The item list without the line of [productId]; 404 when it was never there,
+/// so removing twice cannot be mistaken for success. Pure.
+List<Map<String, dynamic>> withoutLine(
+  List<Map<String, dynamic>> items,
+  ObjectId productId,
+) {
+  final next = _copy(items)
+    ..removeWhere(
+      (item) => (item['productId'] as ObjectId).oid == productId.oid,
+    );
+  if (next.length == items.length) {
+    throw const ApiError(404, 'Item is not in the cart');
+  }
+  return next;
 }
 
 /// Builds the cart screen data for [userId] with live prices and totals.
@@ -147,28 +218,20 @@ Future<Map<String, dynamic>> addCartItem(
   ObjectId productId,
   num quantityKg,
 ) async {
-  final kg = _roundKg(quantityKg);
-  if (kg < _minQuantityKg) {
-    throw const ApiError(400, 'quantityKg must be greater than 0');
-  }
+  final kg = checkedQuantityKg(quantityKg);
 
   final product = await _activeProduct(db, productId);
   final items = await _readItems(db, userId);
 
-  final index = _indexOf(items, productId);
-  final currentKg = index == -1
-      ? 0.0
-      : (items[index]['quantityKg'] as num).toDouble();
-  final newKg = _roundKg(currentKg + kg);
-  _checkStock(product, newKg);
+  final next = withQuantityAdded(items, productId, kg);
+  final index = _indexOf(next, productId);
+  ensureStockKg(
+    product['stock'] as num?,
+    product['name'] as String?,
+    (next[index]['quantityKg'] as num).toDouble(),
+  );
 
-  if (index == -1) {
-    items.add({'productId': productId, 'quantityKg': newKg});
-  } else {
-    items[index]['quantityKg'] = newKg;
-  }
-
-  await _saveItems(db, userId, items);
+  await _saveItems(db, userId, next);
   return buildCartView(db, userId);
 }
 
@@ -181,20 +244,15 @@ Future<Map<String, dynamic>> changeCartItemKg(
   ObjectId productId,
   num quantityKg,
 ) async {
-  final kg = _roundKg(quantityKg);
-  if (kg < _minQuantityKg) {
-    throw const ApiError(400, 'quantityKg must be greater than 0');
-  }
+  final kg = checkedQuantityKg(quantityKg);
 
   final items = await _readItems(db, userId);
-  final index = _indexOf(items, productId);
-  if (index == -1) throw const ApiError(404, 'Item is not in the cart');
+  final next = withQuantitySet(items, productId, kg);
 
   final product = await _activeProduct(db, productId);
-  _checkStock(product, kg);
+  ensureStockKg(product['stock'] as num?, product['name'] as String?, kg);
 
-  items[index]['quantityKg'] = kg;
-  await _saveItems(db, userId, items);
+  await _saveItems(db, userId, next);
   return buildCartView(db, userId);
 }
 
@@ -207,15 +265,9 @@ Future<Map<String, dynamic>> removeCartItem(
   ObjectId productId,
 ) async {
   final items = await _readItems(db, userId);
-  final before = items.length;
-  items.removeWhere(
-    (item) => (item['productId'] as ObjectId).oid == productId.oid,
-  );
-  if (items.length == before) {
-    throw const ApiError(404, 'Item is not in the cart');
-  }
+  final next = withoutLine(items, productId);
 
-  await _saveItems(db, userId, items);
+  await _saveItems(db, userId, next);
   return buildCartView(db, userId);
 }
 

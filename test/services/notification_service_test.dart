@@ -3,15 +3,19 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
 /// One order document, cut down to the fields the notification text needs.
-Map<String, dynamic> _order(String status, {String window = 'morning'}) =>
-    <String, dynamic>{
-      '_id': ObjectId(),
-      'userId': ObjectId(),
-      'orderNumber': 'FH-1042',
-      'status': status,
-      'deliveryWindow': window,
-      'grandTotalCents': 17020,
-    };
+Map<String, dynamic> _order(
+  String status, {
+  String window = 'morning',
+  String method = 'cod',
+}) => <String, dynamic>{
+  '_id': ObjectId(),
+  'userId': ObjectId(),
+  'orderNumber': 'FH-1042',
+  'status': status,
+  'deliveryWindow': window,
+  'paymentMethod': method,
+  'grandTotalCents': 17020,
+};
 
 void main() {
   group('the sentences on screen 31', () {
@@ -20,6 +24,13 @@ void main() {
       expect(wording['type'], 'order_placed');
       expect(wording['title'], 'Order FH-1042 placed');
       expect(wording['body'], r'$170.20 · Cash on delivery');
+    });
+
+    test('a PayPal order is not announced as cash on delivery', () {
+      // Screen 23b prints "PayPal · Paid"; the bell must not disagree.
+      final wording = orderNotification(_order('pending', method: 'paypal'))!;
+      expect(wording['body'], r'$170.20 · PayPal');
+      expect(wording['body'], isNot(contains('Cash on delivery')));
     });
 
     test('a packing order is being packed', () {
@@ -34,8 +45,9 @@ void main() {
     });
 
     test('the afternoon window prints its own hours', () {
-      final wording =
-          orderNotification(_order('on_the_way', window: 'afternoon'))!;
+      final wording = orderNotification(
+        _order('on_the_way', window: 'afternoon'),
+      )!;
       expect(wording['body'], 'Arriving today, 13:00 – 17:00.');
     });
 

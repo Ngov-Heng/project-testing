@@ -75,7 +75,7 @@ const List<SeedProduct> seedProducts = <SeedProduct>[
     'Black sticky rice',
     'Sticky',
     2.30,
-    60,
+    6000,
     'Deep purple sticky rice, sold by the kilogram.',
   ),
   SeedProduct(
@@ -131,7 +131,8 @@ const List<SeedProduct> seedProducts = <SeedProduct>[
 ];
 
 Future<void> main() async {
-  final url = Platform.environment['MONGO_URL'] ??
+  final url =
+      Platform.environment['MONGO_URL'] ??
       'mongodb://localhost:27018/faheng_dev';
   final db = await Db.create(url);
   await db.open();

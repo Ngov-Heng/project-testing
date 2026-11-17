@@ -127,9 +127,7 @@ Future<Map<String, dynamic>> _sandboxCreate(
 ) async {
   final payments = db.collection('payments');
   final existing = await payments.findOne(
-    where
-        .eq('orderId', order['_id'] as ObjectId)
-        .eq('status', 'created'),
+    where.eq('orderId', order['_id'] as ObjectId).eq('status', 'created'),
   );
   if (existing != null) return existing;
 
@@ -183,8 +181,9 @@ Future<Map<String, dynamic>> paypalPaymentStatus(
   final payment = await db
       .collection('payments')
       .findOne(
-        where.eq('orderId', order['_id'] as ObjectId).sortBy('createdAt',
-            descending: true),
+        where
+            .eq('orderId', order['_id'] as ObjectId)
+            .sortBy('createdAt', descending: true),
       );
   return <String, dynamic>{
     'order': <String, dynamic>{
@@ -348,4 +347,9 @@ Future<void> _cancelForFailedPayment(
         .set('statusHistory', history)
         .set('updatedAt', now),
   );
+
+  // Screen 31 has to be able to explain why the order disappeared: reuse the
+  // wording chunk 9 already wrote for a cancelled order, by handing the same
+  // notification builder a copy of the order with the new status.
+  await notifyOrder(db, <String, dynamic>{...order, 'status': 'cancelled'});
 }

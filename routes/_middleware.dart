@@ -14,8 +14,9 @@ Handler middleware(Handler handler) {
     } on ApiError catch (error) {
       // A rule we planned for (bad input, not found, no stock, ...).
       return jsonError(error.statusCode, error.message);
-    } catch (_) {
-      // Something we did not plan for: never leak internals to the client.
+    } catch (error, stack) {
+      // ignore: avoid_print
+      print('UNHANDLED: $error\n$stack');
       return jsonError(500, 'Something went wrong');
     }
   };

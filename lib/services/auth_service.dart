@@ -409,7 +409,9 @@ Future<Map<String, dynamic>> verifyAccount(
   final code = cleanCode(body['code']);
   await _checkAndCount(db, user, code, signupPurpose, nowUtc);
 
-  final updated = await db.collection('users').updateOne(
+  final updated = await db
+      .collection('users')
+      .updateOne(
         where.eq('_id', user['_id']),
         modify
             .set('isVerified', true)
@@ -450,7 +452,9 @@ Future<void> _checkAndCount(
 
 /// Counts a wrong guess so the code dies after [maxCodeAttempts] tries.
 Future<void> recordWrongCode(Db db, Map<String, dynamic> user) async {
-  await db.collection('users').updateOne(
+  await db
+      .collection('users')
+      .updateOne(
         where.eq('_id', user['_id']),
         modify.inc('verification.attempts', 1),
       );
@@ -478,7 +482,9 @@ Future<Map<String, dynamic>> resendSignupCode(
   }
   final now = nowUtc ?? DateTime.now().toUtc();
   final code = generateCode();
-  await db.collection('users').updateOne(
+  await db
+      .collection('users')
+      .updateOne(
         where.eq('_id', user['_id']),
         modify.set('verification', verificationDoc(code, signupPurpose, now)),
       );
@@ -520,7 +526,9 @@ Future<Map<String, dynamic>> requestPasswordReset(
   }
   final now = nowUtc ?? DateTime.now().toUtc();
   final code = generateCode();
-  await db.collection('users').updateOne(
+  await db
+      .collection('users')
+      .updateOne(
         where.eq('_id', user['_id']),
         modify.set('verification', verificationDoc(code, resetPurpose, now)),
       );
@@ -547,7 +555,9 @@ Future<Map<String, dynamic>> resetPassword(
   await _checkAndCount(db, user, code, resetPurpose, nowUtc);
   ensurePasswordChanged(password, user['passwordHash'] as String);
 
-  await db.collection('users').updateOne(
+  await db
+      .collection('users')
+      .updateOne(
         where.eq('_id', user['_id']),
         modify
             .set('passwordHash', hashPassword(password))
@@ -581,7 +591,9 @@ Future<Map<String, dynamic>> changePassword(
   final password = cleanNewPassword(body['newPassword']);
   ensurePasswordChanged(password, hash);
 
-  await db.collection('users').updateOne(
+  await db
+      .collection('users')
+      .updateOne(
         where.eq('_id', user['_id']),
         modify
             .set('passwordHash', hashPassword(password))

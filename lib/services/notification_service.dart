@@ -42,6 +42,14 @@ String moneyLabel(Object? cents) {
   return '\$${value.toStringAsFixed(2)}';
 }
 
+/// How the payment method is printed in a notification body, matching the
+/// payment row on screens 23 and 23b. Kept here rather than imported from
+/// order_service, which already imports this file.
+const paymentLabels = <String, String>{
+  'paypal': 'PayPal',
+  'cod': 'Cash on delivery',
+};
+
 /// The wording of the notification an order status produces, or null for a
 /// status the buyer should not be told about.
 ///
@@ -56,8 +64,9 @@ Map<String, dynamic>? orderNotification(Map<String, dynamic> order) {
       return <String, dynamic>{
         'type': 'order_placed',
         'title': 'Order $number placed',
-        'body': '${moneyLabel(order['grandTotalCents'])} · '
-            'Cash on delivery',
+        'body':
+            '${moneyLabel(order['grandTotalCents'])} · '
+            '${paymentLabels[order['paymentMethod']] ?? 'Cash on delivery'}',
       };
     case 'processing':
       return <String, dynamic>{
@@ -228,7 +237,9 @@ Future<Map<String, dynamic>> listNotifications(
 
 /// The number on the bell.
 Future<Map<String, dynamic>> unreadNotifications(Db db, ObjectId userId) async {
-  final unread = await db.collection('notifications').count(
+  final unread = await db
+      .collection('notifications')
+      .count(
         SelectorBuilder()
           ..eq('userId', userId)
           ..eq('read', false),
@@ -242,7 +253,9 @@ Future<Map<String, dynamic>> markAllNotificationsRead(
   Db db,
   ObjectId userId,
 ) async {
-  final result = await db.collection('notifications').updateMany(
+  final result = await db
+      .collection('notifications')
+      .updateMany(
         where.eq('userId', userId).eq('read', false),
         modify.set('read', true),
       );
