@@ -1,3 +1,7 @@
+// Every buyer request passes through here: Bearer token, then the user
+// document.
+// Collections: users
+
 import 'package:dart_frog/dart_frog.dart';
 import 'package:faheng_api/services/token_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -21,6 +25,8 @@ Handler authGuard(Handler handler) {
       return _unauthorized();
     }
 
+    // The user is loaded fresh on every request, so deleting an account
+    // kills its token straight away.
     final user = await context
         .read<Db>()
         .collection('users')

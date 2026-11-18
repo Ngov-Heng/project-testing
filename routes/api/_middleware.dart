@@ -1,3 +1,6 @@
+// Opens the Mongo connection once and hands it to every route through
+// context.
+
 import 'dart:io';
 
 import 'package:dart_frog/dart_frog.dart';
@@ -6,6 +9,8 @@ import 'package:mongo_dart/mongo_dart.dart';
 Db? _db;
 
 Future<Db> _getDb() async {
+  // Reused while it is still connected. A dropped connection reopens
+  // on the next request instead of crashing the server.
   final existing = _db;
   if (existing != null && existing.isConnected) return existing;
 

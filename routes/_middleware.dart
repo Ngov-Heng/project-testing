@@ -1,3 +1,5 @@
+// Top of the stack. Turns ApiError into JSON, and anything else into a 500.
+
 import 'package:dart_frog/dart_frog.dart';
 import 'package:faheng_api/services/api_error.dart';
 
