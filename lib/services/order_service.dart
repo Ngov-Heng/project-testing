@@ -1,12 +1,9 @@
-// WHY: Holds every buyer order rule: the order number, the item and address
-// snapshots, the stock deduction (with rollback, because the standalone
-// MongoDB in Docker has no multi-document transactions), the status
-// transitions, cancelling and reordering.
-// Where it sits in the flow: routes/api/orders/* call these functions; they
-// read and write the "orders" collection, plus "carts", "products",
-// "addresses" and "counters". The buyer id always comes from the token.
-// Money is stored in integer cents on the order and on every line, and turned
-// back into dollars only in orderView, like the cart does.
+/*
+Manages the buyer order lifecycle: placing an order from the cart, deducting
+stock safely (with automatic rollback if any item runs out or saving fails),
+generating sequential FH-1001 order numbers, listing/viewing orders,
+cancelling early orders, and reordering past items into the cart.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/cart_service.dart';

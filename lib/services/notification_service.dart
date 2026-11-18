@@ -1,11 +1,9 @@
-// WHY: Screen 31 is a list of notifications with unread dots, a "Mark all as
-// read" button and Accept / Decline buttons on a finished quote; the bell on
-// Home needs the unread count on its own.
-// Where it sits in the flow: other services call addNotification when
-// something the buyer cares about happens (order placed, order moved, quote
-// answered), and the four notification routes read it back. Nothing else
-// writes to the collection, so every notification in the database was made in
-// one file.
+/*
+Manages all buyer notifications: builds title/body messages for order updates,
+saves new alerts quietly in the "notifications" collection, lists paginated
+notifications with live quote button states, and handles unread badge counts
+and read/unread updates.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:mongo_dart/mongo_dart.dart';

@@ -1,18 +1,18 @@
-// WHY: Chunk 7 is the owner's side of the same orders the buyer placed in
-// chunk 3: a dashboard (37), a filterable orders table (38), one order with a
-// status changer (39) and the week's delivery schedule (40). The status rules
-// are already written in order_service (orderTransitions) - this file only
-// lets the admin walk them, and adds the owner-only questions: "which orders
-// today", "what is low on stock", "who is waiting for a delivery slot".
-// Where it sits in the flow: every route under /api/admin runs adminGuard
-// first. Nothing here may change what a buyer sees, except the status the
-// buyer's tracking screen (07/26) reads.
+/*
+This is the store owner's backend control center. Every route under /api/admin runs adminGuard first and then calls these functions to power the owner's dashboard, filter/search orders, update delivery statuses, mark cash orders as paid, and manage the weekly delivery schedule.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/notification_service.dart';
 import 'package:faheng_api/services/order_service.dart';
 import 'package:faheng_api/services/product_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+
+/*
+Defines admin rules (150kg heavy order badge, valid order/payment statuses)
+and date helpers converted to Phnom Penh time (UTC+7) so "today" and weekly
+schedules match Cambodia local time instead of UTC.
+*/
 
 /// Screen 40 marks "Heavy: orders of 150 kg or more" with a badge.
 const num heavyOrderKg = 150;
@@ -83,6 +83,12 @@ DateTime phnomPenhDayStart(DateTime utc) {
     local.day,
   ).subtract(const Duration(hours: 7));
 }
+
+/*
+Parses URL query parameters (page, limit, status, date range, search term)
+and builds MongoDB selectors. Resolves text search across order numbers,
+receiver names, and the users collection before querying orders.
+*/
 
 /// The filters on screen 38: search, status, a date range and the sort order.
 class AdminOrderFilters {
@@ -213,6 +219,12 @@ Future<List<ObjectId>> searchOrderIds(Db db, String term) async {
   }.toList();
 }
 
+/*
+Formats MongoDB order documents into clean table rows (attaching customer
+names in a single batch query) and returns paginated results alongside
+total status counts for the orders table header.
+*/
+
 /// How many orders sit in each status, for the line under the page title
 /// ("48 orders in November - 6 pending, 3 on the way").
 Map<String, int> statusCounts(Iterable<Map<String, dynamic>> docs) {
@@ -336,6 +348,14 @@ Future<Map<String, dynamic>> adminListOrders(
     },
   };
 }
+
+
+/*
+Handles single-order management: loads full order + customer profile,
+advances order statuses using orderTransitions (restoring stock if cancelled
+and notifying the buyer), and lets the owner mark cash orders as paid.
+*/
+
 
 /// Screen 39: one order, the customer card beside it, and the statuses the
 /// dropdown may offer next (so the screen never shows a jump the server
@@ -481,6 +501,12 @@ Future<Map<String, dynamic>> setAdminPaymentStatus(
   );
   return adminOrderDetail(db, rawId);
 }
+
+/*
+Assigns orders to a confirmed delivery date and morning/afternoon window,
+and builds the Monday-to-Sunday delivery schedule grid separated from
+unscheduled active orders.
+*/
 
 /// Screen 40's Schedule button: the order gets a confirmed slot. Until the
 /// owner does this the order sits in "Unscheduled orders", which is why the
@@ -655,6 +681,11 @@ Future<Map<String, dynamic>> deliverySchedule(
     'rangeTo': to.toIso8601String(),
   };
 }
+
+/*
+Calculates daily dashboard KPIs (today vs. yesterday orders and revenue
+percentage change, pending order count, recent orders, and low-stock alerts).
+*/
 
 /// A simple percentage change for the dashboard arrows ("+12.4% vs
 /// yesterday"). A jump from nothing is reported as null, because dividing by

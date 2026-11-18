@@ -1,12 +1,9 @@
-// WHY: All the money maths for the cart (and later the order) lives here, so
-// the cart, the price preview and the order can never disagree.
-// Everything is calculated in whole cents to avoid floating point errors and
-// converted back to dollars only when the response is built.
-// Chunk 2 passes the values from the settings document (screens 48 and 50)
-// into calculateTotals, so the three defaults below are only a safety net.
-// The cart screen shows `total` (subtotal minus discount, no delivery fee);
-// the checkout screen shows `deliveryFee` and `grandTotal` on top of it.
-
+/*
+Handles all money calculations for both the shopping cart and final orders so
+prices never disagree. Everything is calculated in whole integer cents to avoid
+decimal rounding bugs, applying the bulk weight discount and flat delivery fee
+before converting back to dollars for the JSON response.
+*/
 /// Default total weight (kg) from which the bulk discount applies.
 const bulkThresholdKg = 150;
 
@@ -16,7 +13,8 @@ const bulkDiscountPercent = 10;
 /// Default flat delivery fee in cents ($3.00) added once per cart.
 const deliveryFeeCents = 300;
 
-/// Converts a price in dollars (like 1.20) to whole cents (120).
+/// Converts a price in dollars (like 1.20) to whole cents (1
+/// 20).
 int toCents(num dollars) => (dollars * 100).round();
 
 /// Converts whole cents back to dollars for the JSON response (120 -> 1.2).
@@ -67,8 +65,9 @@ CartTotals calculateTotals({
   // admin can switch the whole rule off on screen 48.
   final getsDiscount =
       discountEnabled && subtotal > 0 && totalKg >= thresholdKg;
-  final discount =
-      getsDiscount ? (subtotal * discountPercent / 100).round() : 0;
+  final discount = getsDiscount
+      ? (subtotal * discountPercent / 100).round()
+      : 0;
   final fee = subtotal > 0 ? flatFeeCents : 0;
   final total = subtotal - discount;
 

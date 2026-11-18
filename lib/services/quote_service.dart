@@ -1,11 +1,9 @@
-// WHY: Screen 25 lets a buyer ask for a price on 150 kg or more, screen 47 is
-// the admin answering it, and the Accept / Decline buttons on screen 31 are the
-// buyer answering back. All three are the same record moving through four
-// statuses, so they live together here.
-// Where it sits in the flow: the buyer creates a quote (status "new"), the
-// admin sends a price (status "quoted", and the buyer gets a notification), the
-// buyer accepts or declines (status "accepted" or "declined"). Nothing else
-// moves it.
+/*
+Manages bulk price quotes (150 kg or more) for both buyers and the store
+owner: buyers request a custom price (`QR-001`), the owner reviews the
+request with a suggested bulk discount price and sends back a quote, and the
+buyer accepts or declines it. Reads and writes the "quotes" collection.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/notification_service.dart';

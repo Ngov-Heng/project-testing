@@ -1,9 +1,9 @@
-// WHY: Holds every cart rule so the routes stay thin (routes only read the
-// body and check types; the rules live here).
-// Where it sits in the flow: routes/api/cart/* call these functions, and they
-// read and write the "carts" collection plus the "products" collection.
-// One cart document per buyer: _id = the buyer's user id,
-// items: [{ productId, quantityKg }].
+/*
+Manages everything in a buyer's shopping cart: adding rice in kg, changing
+quantities, removing items, clearing the cart, and calculating live totals.
+Each buyer has one cart document in MongoDB (using their userId as _id),
+and every action checks live product stock and admin pricing rules.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/pricing_service.dart';

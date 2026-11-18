@@ -1,11 +1,9 @@
-// WHY: Screen 44 is the only place categories exist: a list with how many
-// products each one holds, a rename box and a delete button. A product stores
-// its category as a plain string (your Q3 answer), so a rename has to touch
-// the products too - that is the one rule in this file that would be easy to
-// get wrong twice.
-// Where it sits in the flow: routes/api/categories/index.dart serves the
-// public list for the chips on screens 03 and 15; the admin routes use the
-// functions below.
+/*
+Manages product categories for both buyers and the store owner: listing
+categories with live product counts, creating new categories, renaming
+categories (updating all matching products), and safely deleting unused ones.
+Reads and writes the "categories" and "products" collections.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/json_safe.dart';
@@ -88,7 +86,9 @@ Future<Map<String, dynamic>> adminCategories(Db db) async {
 /// Refuses a name another category already uses, ignoring letter case, because
 /// "Jasmine" and "jasmine" would split the shop in two.
 Future<void> _ensureNameFree(Db db, String name, {ObjectId? except}) async {
-  final clash = await db.collection('categories').findOne(
+  final clash = await db
+      .collection('categories')
+      .findOne(
         where.match('name', '^${RegExp.escape(name)}\$', caseInsensitive: true),
       );
   if (clash != null && (except == null || clash['_id'] != except)) {

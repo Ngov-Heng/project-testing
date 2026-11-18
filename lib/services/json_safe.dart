@@ -1,13 +1,8 @@
-// WHY: A Mongo document can hold a DateTime, and a DateTime cannot be turned
-// into JSON, so returning a raw document (which the public product and
-// category routes do, to keep the shape chunk 1 shipped) would answer 500 as
-// soon as a document has `createdAt`. This turns dates into ISO strings and
-// leaves everything else alone, so the shape stays the same but is sendable.
-// It has to walk lists and nested maps too: `restockHistory` is a list of
-// {stock, at} maps, and a date inside a list is just as unsendable as a
-// top-level one.
-// Where it sits in the flow: routes/api/products/* and the public category
-// list wrap their documents with jsonSafe before Response.json.
+/*
+Prepares raw MongoDB documents to be sent as JSON responses without crashing.
+Recursively converts DateTime objects into ISO-8601 strings (even inside nested
+lists or maps) and turns MongoDB ObjectIds into plain hex strings.
+*/
 
 import 'package:mongo_dart/mongo_dart.dart';
 

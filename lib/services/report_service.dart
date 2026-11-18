@@ -1,10 +1,9 @@
-// WHY: Screen 49 is one page that answers three questions about a date range:
-// how much money came in each day, which rice sold the most kilos, and who
-// spent the most.
-// Where it sits in the flow: the /api/admin guard has already checked the role.
-// Everything here is computed from `orders` and `users` on every request, so
-// the report can never disagree with the order list: there is only one set of
-// numbers in the shop.
+/*
+Generates the store owner's sales reports over a chosen date range (defaulting
+to the last 7 days in Phnom Penh time). Calculates total revenue, daily sales
+charts, top-selling rice varieties by kg, and highest-spending customers from
+non-cancelled orders in the "orders", "users", and "addresses" collections.
+*/
 
 import 'package:faheng_api/services/admin_order_service.dart';
 import 'package:faheng_api/services/api_error.dart';

@@ -1,11 +1,9 @@
-// WHY: Chunk 8 is the two review screens. Screen 17 (product reviews) needs
-// the average, the number of reviews and the 1-5 star breakdown on top of the
-// list, and screen 30 (rate your order) needs to know which products of a
-// delivered order the buyer has not rated yet.
-// Where it sits in the flow: the routes only read the query string and the
-// body, call one function here, and return whatever it gives them. The rules
-// that decide whether a review is allowed live in this file, so the buyer's
-// screen and the lecturer's questions both have a single place to look.
+/*
+Manages product reviews and ratings: lists public reviews with average star
+ratings and 1-to-5 star breakdowns, checks which items in a delivered order
+still need rating, and saves verified buyer reviews in the "reviews"
+collection.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:mongo_dart/mongo_dart.dart';

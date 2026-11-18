@@ -1,19 +1,9 @@
-// WHY: Chunk 11 is the PayPal path: screen 21a sends the buyer to PayPal,
-// screen 21b waits for the answer, screen 24 is a payment that did not go
-// through, and screen 23b is the order placed with "PayPal · Paid".
-// Where it sits in the flow: the order is placed first, exactly like a cash
-// order, with paymentMethod "paypal" and paymentStatus "unpaid". Then
-// startPaypalPayment opens a payment, capturePaypalPayment finishes it, and
-// paypalPaymentStatus answers the waiting screen.
-//
-// WHAT IS REAL AND WHAT IS STANDING IN FOR PAYPAL: the order, the amount, the
-// state machine, the stock, the 409s and the "nothing was charged" message are
-// all real. The two calls that would go to PayPal's servers - create an order
-// and capture it - are made here, locally, against a `payments` collection,
-// because this project has no PayPal sandbox account and must never be given
-// one's secret. When real credentials exist, only `_sandboxCreate` and
-// `_sandboxCapture` change: everything around them already speaks PayPal's
-// vocabulary (order id, approval, capture) and the routes do not move.
+/*
+Manages PayPal payments for buyer orders: starts a payment attempt with an
+approval URL, checks whether the payment is still pending or finished, and
+captures the result. If approved, it marks the order paid and notifies the
+buyer; if declined, it cancels the order and puts the rice stock back.
+*/
 
 import 'dart:math';
 

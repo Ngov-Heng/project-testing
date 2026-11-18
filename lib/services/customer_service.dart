@@ -1,9 +1,10 @@
-// WHY: Screens 45 and 46 are the same customer seen twice: once as a row in a
-// list of 64, and once as a page with their contact details, their totals and
-// their order history.
-// Where it sits in the flow: the /api/admin guard has already checked the role.
-// The numbers on both screens are computed from `orders` here, never stored on
-// the user: a stored total is wrong the moment an order is cancelled.
+/*
+Manages customer views for the store owner: listing and filtering buyers
+(business vs. household) and viewing a single customer's profile, delivery
+address, spending totals, and order history. Spending stats are calculated
+live from non-cancelled orders across the "users", "orders", and "addresses"
+collections.
+*/
 
 import 'package:faheng_api/services/admin_order_service.dart';
 import 'package:faheng_api/services/api_error.dart';
@@ -232,10 +233,14 @@ Future<Map<String, dynamic>> adminListCustomers(
       for (final doc in docs)
         adminCustomerRow(
           doc,
-          totals: customerTotals(orders[(doc['_id'] as ObjectId).oid] ??
-              const <Map<String, dynamic>>[]),
-          town: townOf(addresses[(doc['_id'] as ObjectId).oid] ??
-              const <Map<String, dynamic>>[]),
+          totals: customerTotals(
+            orders[(doc['_id'] as ObjectId).oid] ??
+                const <Map<String, dynamic>>[],
+          ),
+          town: townOf(
+            addresses[(doc['_id'] as ObjectId).oid] ??
+                const <Map<String, dynamic>>[],
+          ),
         ),
     ],
     'total': total,
@@ -309,13 +314,15 @@ Future<Map<String, dynamic>> adminCustomerDetail(Db db, String rawId) async {
   chosen ??= list.isEmpty ? null : list.last;
 
   final recent =
-      orders.where((order) => order['status'] != 'cancelled').toList()
-        ..sort((a, b) {
-      final left = a['createdAt'];
-      final right = b['createdAt'];
-      if (left is DateTime && right is DateTime) return right.compareTo(left);
-      return 0;
-    });
+      orders.where((order) => order['status'] != 'cancelled').toList()..sort((
+        a,
+        b,
+      ) {
+        final left = a['createdAt'];
+        final right = b['createdAt'];
+        if (left is DateTime && right is DateTime) return right.compareTo(left);
+        return 0;
+      });
   final joinedAt = user['createdAt'];
 
   return <String, dynamic>{

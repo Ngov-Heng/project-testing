@@ -1,12 +1,9 @@
-// WHY: Chunk 6 is the shop catalogue: the buyer side (screens 02, 03, 13, 14,
-// 15) filters and sorts, and the admin side (41, 42, 43) adds, edits and
-// restocks. The rules that must be identical everywhere - a price is a
-// positive dollar amount, stock is a whole number of kg, a description is at
-// most 160 characters, "low stock" starts under 100 kg - live here.
-// Where it sits in the flow: routes/api/products/index.dart (public list) and
-// routes/api/admin/products/* (admin) call these functions. Products keep the
-// original document shape on the public route (`_id`, dollars) because chunk 1
-// already ships that; the admin routes answer with `id` like every new route.
+/*
+Manages the store's rice products: validates product details (name, category,
+price per kg, whole-kg stock, description), filters and searches the admin
+catalogue, tracks low-stock alerts (under 100 kg), and handles creating,
+updating, and restocking items in the "products" collection.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/json_safe.dart';

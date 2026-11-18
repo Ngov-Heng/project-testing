@@ -1,3 +1,8 @@
+/*
+Handles password security using BCrypt: scrambles plain-text passwords into
+salted one-way hashes before saving to MongoDB, and safely verifies typed
+passwords against stored hashes during login and password changes.
+*/
 import 'package:bcrypt/bcrypt.dart';
 
 /// Turns a typed password into a one-way hash that is safe to store.

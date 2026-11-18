@@ -1,3 +1,8 @@
+/*
+Creates and verifies JWT login tokens for authenticated users. Signs a token
+holding the user's ID (valid for 7 days) when they log in, and extracts the
+user ID back out when protected routes check incoming requests.
+*/
 import 'dart:io';
 
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';

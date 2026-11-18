@@ -1,12 +1,10 @@
-// WHY: Holds every delivery address rule (input checks, the one-default rule,
-// the 10 address cap) so the routes stay thin.
-// Where it sits in the flow: routes/api/users/me/addresses/* call it, and it
-// reads and writes the "addresses" collection. Every query includes the buyer
-// id, so one buyer can never read or change another buyer's address.
-
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/validators.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+
+/*
+Takes raw, untrusted JSON sent from the mobile app, checks every field (label, phone format, lat/lng limits, string lengths), throws a 400 ApiError if anything is wrong, and returns a strongly-typed, safe CleanAddress object.
+*/
 
 /// The labels screen 19 offers, stored lowercase. The app capitalises them.
 const addressLabels = ['home', 'work', 'other'];
@@ -80,7 +78,6 @@ double? _coordinate(Object? value, String field, num limit) {
 }
 
 /// Checks the body sent by screen 19 and returns the clean address.
-///
 /// Throws ApiError(400) naming the field that is wrong.
 CleanAddress cleanAddressInput(Object? body) {
   if (body is! Map<String, dynamic>) {
@@ -129,6 +126,13 @@ CleanAddress cleanAddressInput(Object? body) {
   );
 }
 
+/*
+Converts raw MongoDB documents into clean JSON maps for the 
+app (turning _id ObjectId into a string 'id'), 
+safely parses URL IDs, and provides small reusable 
+helpers for sorting and resetting default flags.
+*/
+
 /// The shape the app receives for one address. One address is always one
 /// object with an "id", never a raw database document.
 Map<String, dynamic> addressView(Map<String, dynamic> doc) {
@@ -173,6 +177,14 @@ int _byCreatedAt(Map<String, dynamic> a, Map<String, dynamic> b) {
   if (aAt == null || bAt == null) return 0;
   return aAt.compareTo(bAt);
 }
+
+
+/*
+Reads/writes the "addresses" collection while enforcing:
+ 1. Security isolation (every query filters by userId)
+ 2. Max 10 addresses per buyer
+ 3. "Always One Default" rule (first = default; deleting default promotes oldest)
+*/
 
 /// Screen 18: this buyer's addresses, the default one first.
 Future<List<Map<String, dynamic>>> listAddresses(
@@ -230,7 +242,6 @@ Future<Map<String, dynamic>> createAddress(
 }
 
 /// Replaces the editable fields of one address.
-///
 /// The default flag can only move by making *another* address the default, so
 /// an update that says "not default" on the current default keeps it default -
 /// otherwise the buyer could end up with no default at all.

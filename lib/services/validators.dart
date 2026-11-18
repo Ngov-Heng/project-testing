@@ -1,3 +1,8 @@
+/*
+Cleans and validates email addresses and phone numbers across signup, login,
+and profile updates so contact details are always stored in a consistent
+format and checked against basic format rules.
+*/
 /// Trims and lowercases an email so the same address
 /// is always stored the same way.
 String normalizeEmail(String email) => email.trim().toLowerCase();

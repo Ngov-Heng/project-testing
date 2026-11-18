@@ -1,12 +1,9 @@
-// WHY: Chunk 5 is the account life cycle: sign up (screen 09), the 6-digit
-// code (10), forgot password (11), the new password (12), change password
-// (34) and the login rules the buyer app (01) and the admin site (36) need.
-// All of it is one story - "prove this account belongs to you" - so the rules
-// live in one file and the routes above them stay thin.
-// Where it sits in the flow: routes/api/auth/*.dart and
-// routes/api/users/me/password.dart call these functions. Only the "users"
-// collection is touched; a pending code is stored on the user document itself,
-// so there is no second collection to keep in step.
+/*
+Handles everything about user accounts: signing up, checking 6-digit OTP
+codes, logging in, resetting a forgotten password, and changing passwords.
+It saves the temporary 6-digit code directly inside the user's record in
+MongoDB with a 10-minute timer, a 60-second resend wait, and a 5-try limit.
+*/
 
 import 'dart:math';
 

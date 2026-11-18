@@ -1,10 +1,10 @@
-// WHY: One settings document holds the money rules (bulk discount, delivery
-// fee) and the shop details, so the admin can change them from screen 48 and
-// screen 50 without touching code. This file is the only place that reads or
-// writes that document.
-// Where it sits in the flow: routes/api/settings (public read) and
-// routes/api/admin/settings (read + update) call it, and cart_service asks it
-// for the pricing rules before it calculates any total.
+/*
+Manages the shop's global configuration stored in a single "settings" document
+(id: "shop"): bulk discount rules, flat delivery fee, shop contact details,
+and enabled payment methods (PayPal / Cash on Delivery). Both the public
+storefront and the admin settings pages read from here, and cart/order
+services pull pricing rules from this file.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/pricing_service.dart';

@@ -1,9 +1,9 @@
-// WHY: Holds the profile rules (full name, phone, email) so the route stays
-// thin. Screens 08 and 32 only need to read one profile and save it.
-// Where it sits in the flow: routes/api/users/me/index.dart calls it for GET
-// and PUT; it reads and writes the "users" collection. Role, passwordHash,
-// isVerified and customerType are never changed here: the profile screen shows
-// customerType as read-only text.
+/*
+Manages reading and updating a buyer's own profile (full name, phone number,
+and email) in the "users" collection. Validates contact formats, ensures
+a buyer keeps at least one login method (phone or email), and prevents
+duplicate phone numbers or emails across accounts.
+*/
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/validators.dart';
