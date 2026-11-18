@@ -178,14 +178,6 @@ int _byCreatedAt(Map<String, dynamic> a, Map<String, dynamic> b) {
   return aAt.compareTo(bAt);
 }
 
-
-/*
-Reads/writes the "addresses" collection while enforcing:
- 1. Security isolation (every query filters by userId)
- 2. Max 10 addresses per buyer
- 3. "Always One Default" rule (first = default; deleting default promotes oldest)
-*/
-
 /// Screen 18: this buyer's addresses, the default one first.
 Future<List<Map<String, dynamic>>> listAddresses(
   Db db,
