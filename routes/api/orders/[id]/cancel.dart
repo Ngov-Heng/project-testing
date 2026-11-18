@@ -1,8 +1,3 @@
-// WHY: Screen 28 lets the buyer cancel an order and type a reason. Cancelling
-// puts the kg back on the shelf, so it belongs in order_service, not here.
-// Where it sits in the flow: authGuard has already run; PATCH carries
-// {"reason": "..."}.
-
 import 'dart:convert';
 
 import 'package:dart_frog/dart_frog.dart';
@@ -10,7 +5,6 @@ import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/order_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// Cancels one of this buyer's orders.
 Future<Response> onRequest(RequestContext context, String id) async {
   if (context.request.method != HttpMethod.patch) {
     return Response(statusCode: 405);

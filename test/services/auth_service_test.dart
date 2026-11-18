@@ -6,8 +6,6 @@ import 'package:faheng_api/services/password_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// A random source that always answers zero, so "000000" can be produced on
-/// purpose and the leading-zero case is tested, not hoped for.
 class _ZeroRandom implements Random {
   @override
   int nextInt(int max) => 0;
@@ -19,7 +17,6 @@ class _ZeroRandom implements Random {
   bool nextBool() => false;
 }
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -29,7 +26,6 @@ ApiError _apiError(void Function() action) {
   fail('expected an ApiError, but nothing was thrown');
 }
 
-/// A user document as it looks in Mongo while a code is waiting.
 Map<String, dynamic> _user({
   String code = '482913',
   String purpose = signupPurpose,
@@ -55,7 +51,6 @@ Map<String, dynamic> _user({
 }
 
 void main() {
-  // 8 Nov 2026, 10:00 in the morning in Phnom Penh (03:00 UTC).
   final now = DateTime.utc(2026, 11, 8, 3);
 
   group('the six-digit code', () {
@@ -68,7 +63,6 @@ void main() {
     });
 
     test('a leading zero is kept, because 012345 is a real code', () {
-      // A number would lose that zero; a string keeps it.
       expect(generateCode(_ZeroRandom()), '000000');
     });
 

@@ -1,8 +1,3 @@
-// WHY: Adds a product to the buyer's cart (or adds more kg of it).
-// Where it sits in the flow: route -> authGuard -> cart_service.addCartItem.
-// The route only reads the body and checks the types; the cart rules and the
-// stock rule live in the service.
-
 import 'package:dart_frog/dart_frog.dart';
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/cart_service.dart';
@@ -47,6 +42,5 @@ Future<Response> onRequest(RequestContext context) async {
     productId,
     quantityKg,
   );
-
   return Response.json(body: cart);
 }

@@ -1,11 +1,3 @@
-// WHY: Screens 02 (featured row), 03 (listing), 13/14 (search) and 15 (filter
-// and sort) all read this one list. Screen 15 adds three things the original
-// route did not have: a price range ("$0.90 - $1.30"), the "In stock only"
-// switch, and a result count ("Show 3 results") which is the `total` field.
-// Where it sits in the flow: public, no token. The document shape stays the
-// one chunk 1 shipped (`_id` as a hex string, dollars in `pricePerKg`) so the
-// Flutter cart and product screens keep working.
-
 import 'package:dart_frog/dart_frog.dart';
 import 'package:faheng_api/services/product_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -25,7 +17,6 @@ Future<Response> onRequest(RequestContext context) async {
   final limit = int.tryParse(params['limit'] ?? '') ?? 10;
   final minPrice = double.tryParse(params['minPrice'] ?? '');
   final maxPrice = double.tryParse(params['maxPrice'] ?? '');
-
   const allowedSorts = ['name', 'price_asc', 'price_desc'];
   if (page < 1 || limit < 1 || limit > 50 || !allowedSorts.contains(sort)) {
     return Response.json(
@@ -53,7 +44,6 @@ Future<Response> onRequest(RequestContext context) async {
 
   final db = context.read<Db>();
   final collection = db.collection('products');
-
   final selector = where.eq('isActive', true);
   if (category != null && category.isNotEmpty) {
     selector.eq('category', category);
@@ -64,12 +54,10 @@ Future<Response> onRequest(RequestContext context) async {
   if (featured) {
     selector.eq('isFeatured', true);
   }
-  // The price slider on screen 15 is inclusive on both ends.
+
   if (minPrice != null) selector.gte('pricePerKg', minPrice);
   if (maxPrice != null) selector.lte('pricePerKg', maxPrice);
-  // "In stock only": anything above zero can be ordered.
   if (inStockOnly) selector.gt('stock', 0);
-
   final total = await collection.count(selector);
 
   switch (sort) {
@@ -82,7 +70,6 @@ Future<Response> onRequest(RequestContext context) async {
   }
   selector.skip((page - 1) * limit).limit(limit);
   final docs = await collection.find(selector).toList();
-
   final items = docs.map(publicProductView).toList();
 
   return Response.json(

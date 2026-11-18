@@ -1,9 +1,3 @@
-// WHY: Screen 06 (checkout) sends POST to place the order, and screen 07
-// (my orders) sends GET to list them under the Active and Past tabs.
-// Where it sits in the flow: authGuard has already run, so the buyer id comes
-// from the token. All the rules live in order_service; this file only reads
-// the body and the query string.
-
 import 'dart:convert';
 
 import 'package:dart_frog/dart_frog.dart';
@@ -11,7 +5,6 @@ import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/order_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// Places an order, or lists this buyer's orders.
 Future<Response> onRequest(RequestContext context) async {
   final user = context.read<Map<String, dynamic>>();
   final userId = user['_id'] as ObjectId;

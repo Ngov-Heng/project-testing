@@ -4,7 +4,6 @@ import 'package:faheng_api/services/settings_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -14,7 +13,6 @@ ApiError _apiError(void Function() action) {
   fail('expected an ApiError, but nothing was thrown');
 }
 
-/// A quote document the way createQuote writes it.
 Map<String, dynamic> _doc({
   String status = 'new',
   int? priceCents,
@@ -232,7 +230,6 @@ void main() {
         rules,
       );
       expect(view['shopPricePerKg'], 1.48);
-      // 1.48 minus 10% is 1.332, which the panel prefills as 1.33.
       expect(view['suggestedPricePerKg'], 1.33);
       expect(view['bulkDiscountPercent'], 10);
       expect((view['customer']! as Map)['name'], 'Nita Sovann');

@@ -1,7 +1,3 @@
-// WHY: The cart screen itself.
-// Where it sits in the flow: route -> authGuard (routes/api/cart/_middleware)
-// -> cart_service. GET shows the cart, DELETE empties it.
-
 import 'package:dart_frog/dart_frog.dart';
 import 'package:faheng_api/services/cart_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';

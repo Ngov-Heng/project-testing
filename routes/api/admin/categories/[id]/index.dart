@@ -1,9 +1,3 @@
-// WHY: Screen 44's side panel shows one category and the products inside it,
-// its Save button renames it, and its Delete button removes it. The rename has
-// to rewrite the products too, because a product only stores the category as a
-// string; and the delete is refused while products still use it.
-// Where it sits in the flow: adminGuard already ran.
-
 import 'dart:convert';
 
 import 'package:dart_frog/dart_frog.dart';
@@ -11,7 +5,6 @@ import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/category_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// Reads, renames or deletes one category.
 Future<Response> onRequest(RequestContext context, String id) async {
   final db = context.read<Db>();
 

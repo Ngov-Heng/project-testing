@@ -1,15 +1,9 @@
-/*
-Manages all buyer notifications: builds title/body messages for order updates,
-saves new alerts quietly in the "notifications" collection, lists paginated
-notifications with live quote button states, and handles unread badge counts
-and read/unread updates.
-*/
+// In-app notifications. We store and list them; we never push them.
+// Collections: notifications, quotes
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// The notification kinds screen 31 draws. The app picks the little icon from
-/// the type, so the set is closed: a typo here would draw nothing.
 const notificationTypes = <String>[
   'order_placed',
   'order_processing',
@@ -17,13 +11,10 @@ const notificationTypes = <String>[
   'order_delivered',
   'order_cancelled',
   'quote_ready',
-  // Chunk 11: a PayPal capture told the buyer their money arrived.
+
   'payment_received',
 ];
 
-/// How a delivery window is printed in a notification: "Arriving today,
-/// 8:00 – 11:00". The window values are stored as words; the hours live here,
-/// in one place, because two screens now print them.
 String windowLabel(String? window) {
   switch (window) {
     case 'morning':
@@ -34,25 +25,16 @@ String windowLabel(String? window) {
   return '';
 }
 
-/// Cents to the "$170.20" the screens show.
 String moneyLabel(Object? cents) {
   final value = cents is num ? cents.toDouble() / 100 : 0.0;
   return '\$${value.toStringAsFixed(2)}';
 }
 
-/// How the payment method is printed in a notification body, matching the
-/// payment row on screens 23 and 23b. Kept here rather than imported from
-/// order_service, which already imports this file.
 const paymentLabels = <String, String>{
   'paypal': 'PayPal',
   'cod': 'Cash on delivery',
 };
 
-/// The wording of the notification an order status produces, or null for a
-/// status the buyer should not be told about.
-///
-/// Kept as a pure function so the text can be tested without a database: the
-/// screen is judged on these sentences.
 Map<String, dynamic>? orderNotification(Map<String, dynamic> order) {
   final number = order['orderNumber'] as String? ?? 'your order';
   final status = order['status'] as String? ?? '';
@@ -94,11 +76,6 @@ Map<String, dynamic>? orderNotification(Map<String, dynamic> order) {
   return null;
 }
 
-/// Writes one notification.
-///
-/// It never throws: a buyer who cannot be told about an order should not stop
-/// the order itself from being placed or moved. The caller has already done the
-/// real work by the time this runs.
 Future<void> addNotification(
   Db db, {
   required ObjectId userId,
@@ -122,12 +99,9 @@ Future<void> addNotification(
       'createdAt': DateTime.now().toUtc(),
     });
   } catch (_) {
-    // Deliberately quiet: see the comment above.
   }
 }
 
-/// Tells the buyer about an order, using the wording of
-/// [orderNotification]. Called right after the order is saved or moved.
 Future<void> notifyOrder(Db db, Map<String, dynamic> order) async {
   final wording = orderNotification(order);
   if (wording == null) return;
@@ -143,7 +117,6 @@ Future<void> notifyOrder(Db db, Map<String, dynamic> order) async {
   );
 }
 
-/// One notification as the app receives it.
 Map<String, dynamic> notificationView(
   Map<String, dynamic> doc, {
   String? quoteStatus,
@@ -159,17 +132,13 @@ Map<String, dynamic> notificationView(
     'read': doc['read'] == true,
     if (doc['orderId'] is ObjectId) 'orderId': (doc['orderId'] as ObjectId).oid,
     if (doc['quoteId'] is ObjectId) 'quoteId': (doc['quoteId'] as ObjectId).oid,
-    // Screen 31 draws Accept / Decline on a finished quote. Once the buyer has
-    // answered, the buttons must disappear, so it is read from the quote now
-    // and not copied into the notification when it was written.
+
     if (isQuote) 'canRespond': quoteStatus == 'quoted',
     if (isQuote) 'quoteStatus': quoteStatus,
     if (createdAt is DateTime) 'createdAt': createdAt.toIso8601String(),
   };
 }
 
-/// Screen 31: this buyer's notifications, newest first, plus the unread count
-/// the bell on Home shows.
 Future<Map<String, dynamic>> listNotifications(
   Db db,
   ObjectId userId,
@@ -194,8 +163,6 @@ Future<Map<String, dynamic>> listNotifications(
       )
       .toList();
 
-  // One extra query answers "are the Accept / Decline buttons still there?"
-  // for every quote notification on the page.
   final quoteIds = docs
       .where((doc) => doc['type'] == 'quote_ready')
       .map((doc) => doc['quoteId'])
@@ -233,7 +200,6 @@ Future<Map<String, dynamic>> listNotifications(
   };
 }
 
-/// The number on the bell.
 Future<Map<String, dynamic>> unreadNotifications(Db db, ObjectId userId) async {
   final unread = await db
       .collection('notifications')
@@ -245,8 +211,6 @@ Future<Map<String, dynamic>> unreadNotifications(Db db, ObjectId userId) async {
   return <String, dynamic>{'unread': unread};
 }
 
-/// Screen 31's "Mark all as read". It answers with the new count, which is
-/// always zero, so the app can redraw the bell without asking again.
 Future<Map<String, dynamic>> markAllNotificationsRead(
   Db db,
   ObjectId userId,
@@ -263,7 +227,6 @@ Future<Map<String, dynamic>> markAllNotificationsRead(
   };
 }
 
-/// Tapping one notification marks that one read.
 Future<Map<String, dynamic>> markNotificationRead(
   Db db,
   ObjectId userId,

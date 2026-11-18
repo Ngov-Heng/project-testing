@@ -1,41 +1,19 @@
-/*
-Manages product reviews and ratings: lists public reviews with average star
-ratings and 1-to-5 star breakdowns, checks which items in a delivered order
-still need rating, and saves verified buyer reviews in the "reviews"
-collection.
-*/
+// Reviews. Delivered orders only, one per product per order.
+// Collections: reviews, orders, products
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// The lowest number of stars a review can have.
 const reviewMinStars = 1;
-
-/// The highest number of stars a review can have.
 const reviewMaxStars = 5;
-
-/// How long a comment may be. The box on screen 30 fits about this much and a
-/// database full of essays helps nobody.
 const reviewCommentMaxLength = 300;
 
-/// One review the buyer just wrote, after the body has been checked.
 class ReviewInput {
-  /// Creates the checked review.
   const ReviewInput({required this.stars, required this.comment});
-
-  /// 1 to 5.
   final int stars;
-
-  /// The trimmed comment, or null when the buyer left the box empty.
   final String? comment;
 }
 
-/// Reads `stars` and `comment` out of a request body.
-///
-/// Screen 30 has five stars and a box marked "(optional)", so stars are
-/// required and the comment is not. A number in a string is refused on
-/// purpose: a client sending "5" is a bug that should show up in the test run,
-/// not a favour to quietly accept.
 ReviewInput cleanReviewInput(Object? body) {
   if (body is! Map<String, dynamic>) {
     throw const ApiError(400, 'Body must be a JSON object');
@@ -70,10 +48,6 @@ ReviewInput cleanReviewInput(Object? body) {
   );
 }
 
-/// The initials drawn in the round avatar on screen 17: "Dara Vuth" -> "DV".
-///
-/// Khmer names are often written the other way round, but two letters are two
-/// letters either way, and the app shows what the customer typed.
 String reviewInitials(String name) {
   final words = name
       .trim()
@@ -88,12 +62,6 @@ String reviewInitials(String name) {
       .toUpperCase();
 }
 
-/// One review as the app receives it.
-///
-/// `verifiedPurchase` is always true, because a review can only be written
-/// from an order that was delivered. It is still sent as a field: screen 17
-/// draws the tag from it, and the day a review can come from somewhere else
-/// the field will already be there.
 Map<String, dynamic> reviewView(Map<String, dynamic> doc) {
   final createdAt = doc['createdAt'];
   final author = (doc['authorName'] as String?) ?? 'Customer';
@@ -111,12 +79,6 @@ Map<String, dynamic> reviewView(Map<String, dynamic> doc) {
   };
 }
 
-/// The block at the top of screen 17: the average, how many reviews there are
-/// and how many gave each number of stars.
-///
-/// The breakdown always carries all five keys, 5 down to 1, with a zero where
-/// nobody voted. The screen draws five bars; if a bar disappeared when nobody
-/// picked that star, the rows would jump around as reviews arrive.
 Map<String, dynamic> ratingSummary(List<Map<String, dynamic>> reviews) {
   final breakdown = <String, int>{'5': 0, '4': 0, '3': 0, '2': 0, '1': 0};
   var sum = 0;
@@ -127,8 +89,6 @@ Map<String, dynamic> ratingSummary(List<Map<String, dynamic>> reviews) {
     sum += stars;
   }
   final count = breakdown.values.fold<int>(0, (total, n) => total + n);
-  // One decimal, the way the mock prints "4.5". Rounding here and not in the
-  // app means two clients can never disagree about the number.
   final average = count == 0 ? 0.0 : (sum * 10 / count).round() / 10;
   return <String, dynamic>{
     'average': average,
@@ -137,7 +97,6 @@ Map<String, dynamic> ratingSummary(List<Map<String, dynamic>> reviews) {
   };
 }
 
-/// Validates `page` and `limit` the same way every other list in this API does.
 int cleanPage(Map<String, String> query) {
   final page = int.tryParse(query['page'] ?? '') ?? 1;
   final limit = int.tryParse(query['limit'] ?? '') ?? 20;
@@ -147,18 +106,11 @@ int cleanPage(Map<String, String> query) {
   return page;
 }
 
-/// The same check for `limit`, kept separate so the caller reads the way the
-/// route does.
 int cleanLimit(Map<String, String> query) {
   cleanPage(query);
   return int.tryParse(query['limit'] ?? '') ?? 20;
 }
 
-/// The product a review list is about, from `?productId=`.
-///
-/// A malformed id is a 400 ("that is not an id") and a well formed id that
-/// matches nothing is a 404 ("there is no such product"); the two are
-/// different mistakes and deserve different answers.
 ObjectId cleanProductId(String? raw) {
   if (raw == null || raw.trim().isEmpty) {
     throw const ApiError(400, 'productId is required');
@@ -170,8 +122,6 @@ ObjectId cleanProductId(String? raw) {
   }
 }
 
-/// Screen 17: the product line at the top, the rating summary and one page of
-/// reviews, newest first.
 Future<Map<String, dynamic>> listProductReviews(
   Db db,
   Map<String, String> query,
@@ -184,7 +134,6 @@ Future<Map<String, dynamic>> listProductReviews(
       .collection('products')
       .findOne(where.eq('_id', productId).eq('isActive', true));
   if (product == null) throw const ApiError(404, 'Product not found');
-
   final reviews = db.collection('reviews');
   final selector = SelectorBuilder()..eq('productId', productId);
   final total = await reviews.count(selector);
@@ -197,8 +146,6 @@ Future<Map<String, dynamic>> listProductReviews(
           ..limit(limit),
       )
       .toList();
-
-  // The summary counts every review of the product, not just this page.
   final all = await reviews.find(where.eq('productId', productId)).toList();
 
   return <String, dynamic>{
@@ -216,11 +163,6 @@ Future<Map<String, dynamic>> listProductReviews(
   };
 }
 
-/// The `deliveredAt` stamp of an order, taken from its status history.
-///
-/// Screen 30 prints "Delivered 8 Nov 2026"; the order document keeps the whole
-/// history, so the date is read from the `delivered` entry instead of being
-/// copied into a second field that could drift.
 String? deliveredAt(Map<String, dynamic> order) {
   final history = (order['statusHistory'] as List?) ?? const <dynamic>[];
   String? found;
@@ -233,12 +175,6 @@ String? deliveredAt(Map<String, dynamic> order) {
   return found;
 }
 
-/// Screen 30, read side: every item of this order with the review the buyer
-/// already wrote, if any.
-///
-/// `canReview` is per item, not per order: a buyer may rate one product today
-/// and the other one next week, and the screen shows a filled star row for the
-/// one that is done.
 Future<Map<String, dynamic>> orderReviewState(
   Db db,
   ObjectId userId,
@@ -256,7 +192,8 @@ Future<Map<String, dynamic>> orderReviewState(
   final byProduct = <String, Map<String, dynamic>>{
     for (final review in reviews) (review['productId'] as ObjectId).oid: review,
   };
-
+  // Only delivered orders can be reviewed. You cannot rate rice you
+  // never received.
   final delivered = order['status'] == 'delivered';
   final items = ((order['items'] as List?) ?? const <dynamic>[])
       .map((raw) => Map<String, dynamic>.from(raw as Map))
@@ -271,8 +208,6 @@ Future<Map<String, dynamic>> orderReviewState(
   };
 }
 
-/// One row of screen 30: the product, whether it can still be rated and the
-/// review it already has.
 Map<String, dynamic> _itemState(
   Map<String, dynamic> item,
   bool delivered,
@@ -290,17 +225,6 @@ Map<String, dynamic> _itemState(
   };
 }
 
-/// Screen 30, write side: one review for one product of a delivered order.
-///
-/// The rules, in the order they are checked, because the first failure is the
-/// one the buyer is shown:
-/// 1. the order must be this buyer's (404 for anyone else's, never 403: the
-///    app must not confirm that an order exists);
-/// 2. it must be delivered (400 - nothing to rate before the rice arrives);
-/// 3. the product must really be in that order (400 - otherwise anyone could
-///    review any rice in the shop);
-/// 4. one review per product per order (409 - not per product overall, so a
-///    customer who buys the same rice twice may rate both deliveries).
 Future<Map<String, dynamic>> placeReview(
   Db db,
   Map<String, dynamic> user,
@@ -361,6 +285,5 @@ Future<Map<String, dynamic>> placeReview(
     'createdAt': DateTime.now().toUtc(),
   };
   await reviews.insertOne(doc);
-
   return <String, dynamic>{'review': reviewView(doc)};
 }

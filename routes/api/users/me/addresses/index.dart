@@ -1,9 +1,3 @@
-// WHY: Screens 18 (address list) and 19 (add address).
-// Where it sits in the flow: /api/users/_middleware.dart has already run
-// authGuard. GET lists this buyer's addresses (default first), POST adds one
-// through address_service. The buyer id always comes from the token, never
-// from the body, so a buyer cannot write into somebody else's list.
-
 import 'dart:convert';
 
 import 'package:dart_frog/dart_frog.dart';
@@ -11,7 +5,6 @@ import 'package:faheng_api/services/address_service.dart';
 import 'package:faheng_api/services/api_error.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// Lists the addresses, or adds a new one.
 Future<Response> onRequest(RequestContext context) async {
   final user = context.read<Map<String, dynamic>>();
   final userId = user['_id'] as ObjectId;

@@ -1,9 +1,6 @@
-/*
-Manages bulk price quotes (150 kg or more) for both buyers and the store
-owner: buyers request a custom price (`QR-001`), the owner reviews the
-request with a suggested bulk discount price and sends back a quote, and the
-buyer accepts or declines it. Reads and writes the "quotes" collection.
-*/
+// Quotes for 150 kg and up, from the moment a buyer asks to accept or
+// decline.
+// Collections: quotes, users, addresses, products, counters
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/notification_service.dart';
@@ -11,40 +8,21 @@ import 'package:faheng_api/services/pricing_service.dart';
 import 'package:faheng_api/services/settings_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// The four statuses of screen 47. "new" and "quoted" are the two that still
-/// need somebody to do something.
 const quoteStatuses = <String>['new', 'quoted', 'accepted', 'declined'];
-
-/// Screen 25 says "Minimum 150 kg" under the quantity box.
 const minimumQuoteKg = 150;
-
-/// The note boxes on screens 25 and 47 are both small; one limit for both.
 const quoteNoteMaxLength = 300;
-
-/// Screen 47 shows QR-006, so the number is padded to three digits.
 String quoteNumberFor(int value) => 'QR-${value.toString().padLeft(3, '0')}';
 
-/// One quote request, after the body has been checked.
 class QuoteInput {
-  /// Creates the checked request.
   const QuoteInput({
     required this.productId,
     required this.quantityKg,
     required this.addressId,
     required this.note,
   });
-
-  /// The product the buyer wants priced.
   final ObjectId productId;
-
-  /// How many kg, at least [minimumQuoteKg].
   final double quantityKg;
-
-  /// Where it should go. Copied onto the quote so the admin sees the address
-  /// the buyer had chosen at the time.
   final ObjectId addressId;
-
-  /// The optional "Anything we should know?" text.
   final String? note;
 }
 
@@ -59,7 +37,6 @@ ObjectId _objectId(Object? raw, String field) {
   }
 }
 
-/// Reads `productId`, `quantityKg`, `addressId` and `note` off screen 25.
 QuoteInput cleanQuoteInput(Object? body) {
   if (body is! Map<String, dynamic>) {
     throw const ApiError(400, 'Body must be a JSON object');
@@ -97,11 +74,8 @@ QuoteInput cleanQuoteInput(Object? body) {
   );
 }
 
-/// Whole numbers of kg are stored as ints, so "200.0" never ends up in the
-/// database as a float and prints as "200.0 kg" on screen 47.
 num tidyKg(double kg) => kg == kg.roundToDouble() ? kg.round() : kg;
 
-/// One quote as the buyer's app receives it.
 Map<String, dynamic> quoteView(Map<String, dynamic> doc) {
   final requestedAt = doc['requestedAt'];
   final quotedAt = doc['quotedAt'];
@@ -119,7 +93,7 @@ Map<String, dynamic> quoteView(Map<String, dynamic> doc) {
     'quantityKg': doc['quantityKg'],
     'address': doc['address'],
     'note': doc['note'],
-    // Dollars, like every other money field the app already reads.
+
     'pricePerKg': priceCents == null ? null : toDollars(priceCents.round()),
     'total': doc['quotedTotalCents'] == null
         ? null
@@ -132,9 +106,6 @@ Map<String, dynamic> quoteView(Map<String, dynamic> doc) {
   };
 }
 
-/// The next QR number, using the same `counters` collection and the same
-/// atomic `$inc` as order numbers, so two requests at once never share a
-/// number.
 Future<int> nextQuoteNumber(Db db) async {
   final counters = db.collection('counters');
   final existing = await counters.findOne(where.eq('_id', 'quotes'));
@@ -142,7 +113,6 @@ Future<int> nextQuoteNumber(Db db) async {
     try {
       await counters.insertOne(<String, dynamic>{'_id': 'quotes', 'seq': 0});
     } catch (_) {
-      // Another request created it in the same instant; that is fine.
     }
   }
   final result = await counters.modernFindAndModify(
@@ -157,8 +127,6 @@ Future<int> nextQuoteNumber(Db db) async {
   return seq.round();
 }
 
-/// The address copy stored on the quote: what the admin needs to answer, and
-/// what the buyer chose at that moment.
 Map<String, dynamic> quoteAddressCopy(Map<String, dynamic> address) =>
     <String, dynamic>{
       'label': address['label'],
@@ -168,7 +136,6 @@ Map<String, dynamic> quoteAddressCopy(Map<String, dynamic> address) =>
       'town': address['town'],
     };
 
-/// Screen 25: the buyer sends a request for a price.
 Future<Map<String, dynamic>> createQuote(
   Db db,
   ObjectId userId,
@@ -185,7 +152,6 @@ Future<Map<String, dynamic>> createQuote(
       .collection('addresses')
       .findOne(where.eq('_id', input.addressId).eq('userId', userId));
   if (address == null) throw const ApiError(404, 'Address not found');
-
   final now = DateTime.now().toUtc();
   final seq = await nextQuoteNumber(db);
   final doc = <String, dynamic>{
@@ -196,9 +162,7 @@ Future<Map<String, dynamic>> createQuote(
     'productId': input.productId,
     'productName': product['name'],
     'productCategory': product['category'],
-    // The shop price at the moment of the request. Screen 47 prints it next to
-    // the suggested bulk price, so it is copied here instead of being looked up
-    // again: a price change tomorrow must not rewrite yesterday's request.
+
     'shopPricePerKgCents':
         (((product['pricePerKg'] as num?) ?? 0) * 100).round(),
 
@@ -217,7 +181,6 @@ Future<Map<String, dynamic>> createQuote(
   return quoteView(doc);
 }
 
-/// The buyer's own quotes, newest first.
 Future<Map<String, dynamic>> listMyQuotes(
   Db db,
   ObjectId userId,
@@ -259,7 +222,6 @@ ObjectId _parseQuoteId(String raw) {
   }
 }
 
-/// One of the buyer's quotes. Another buyer's quote answers 404, never 403.
 Future<Map<String, dynamic>> findMyQuote(
   Db db,
   ObjectId userId,
@@ -272,11 +234,6 @@ Future<Map<String, dynamic>> findMyQuote(
   return quoteView(quote);
 }
 
-/// The Accept / Decline buttons on screen 31.
-///
-/// Only a quote that has a price can be answered; answering twice, or
-/// answering a request the admin has not priced yet, is a conflict (409), not a
-/// bad request, because both are about the state of the record.
 Future<Map<String, dynamic>> respondToQuote(
   Db db,
   ObjectId userId,
@@ -296,7 +253,6 @@ Future<Map<String, dynamic>> respondToQuote(
   final collection = db.collection('quotes');
   final quote = await collection.findOne(where.id(id).eq('userId', userId));
   if (quote == null) throw const ApiError(404, 'Quote not found');
-
   final status = quote['status'] as String? ?? 'new';
   if (status != 'quoted') {
     throw ApiError(
@@ -318,8 +274,6 @@ Future<Map<String, dynamic>> respondToQuote(
   return quoteView(quote);
 }
 
-/// The filter half of screen 47's query: status only. The search box is added
-/// by id, because a customer name lives in `users`.
 SelectorBuilder buildQuoteQuery(
   Map<String, String> query, {
   List<ObjectId>? ids,
@@ -337,7 +291,6 @@ SelectorBuilder buildQuoteQuery(
   return selector;
 }
 
-/// The counts under the title on screen 47: "6 requests · 2 new · 2 quoted".
 Map<String, int> quoteStatusCounts(List<Map<String, dynamic>> quotes) {
   final counts = <String, int>{
     'all': quotes.length,
@@ -350,11 +303,6 @@ Map<String, int> quoteStatusCounts(List<Map<String, dynamic>> quotes) {
   return counts;
 }
 
-/// The admin row of screen 47, and the right hand panel behind it.
-///
-/// `shopPricePerKg` and `suggestedPricePerKg` are there so the panel can print
-/// "Shop price $1.48 per kg, minus 10% bulk discount" and prefill $1.33
-/// without asking the API a second time.
 Map<String, dynamic> adminQuoteView(
   Map<String, dynamic> doc,
   Map<String, dynamic>? customer,
@@ -399,7 +347,6 @@ Map<String, dynamic> adminQuoteView(
   };
 }
 
-/// Screen 47: one page of requests, plus the counts above the table.
 Future<Map<String, dynamic>> adminListQuotes(
   Db db,
   Map<String, String> query,
@@ -410,9 +357,6 @@ Future<Map<String, dynamic>> adminListQuotes(
     throw const ApiError(400, 'page must be 1 or more and limit 1 to 100');
   }
   final collection = db.collection('quotes');
-
-  // The search box matches the request number or the customer's name, which
-  // lives in `users`, so it is turned into a list of ids first.
   List<ObjectId>? ids;
   final term = (query['q'] ?? '').trim();
   if (term.isNotEmpty) {
@@ -451,7 +395,6 @@ Future<Map<String, dynamic>> adminListQuotes(
     ..skip((page - 1) * limit)
     ..limit(limit);
   final docs = await collection.find(paged).toList();
-
   final rules = rulesFrom(await loadSettings(db));
   final customers = await _customersFor(db, docs);
   final allInFilter = await collection.find(buildQuoteQuery(query)).toList();
@@ -472,7 +415,6 @@ Future<Map<String, dynamic>> adminListQuotes(
   };
 }
 
-/// The customers of a page of quotes in one query.
 Future<Map<String, Map<String, dynamic>>> _customersFor(
   Db db,
   List<Map<String, dynamic>> docs,
@@ -488,12 +430,6 @@ Future<Map<String, Map<String, dynamic>>> _customersFor(
   };
 }
 
-/// Screen 47's "Send quote": the admin types a price per kg and an optional
-/// note, and the buyer is told about it on screen 31.
-///
-/// Re-quoting is allowed while the request is still `new` or `quoted`, because
-/// a wrong price should be fixable without asking the buyer to start again.
-/// Once the buyer has answered, the price is history.
 Future<Map<String, dynamic>> sendQuote(
   Db db,
   String rawId,
@@ -526,7 +462,6 @@ Future<Map<String, dynamic>> sendQuote(
   final collection = db.collection('quotes');
   final quote = await collection.findOne(where.id(id));
   if (quote == null) throw const ApiError(404, 'Quote not found');
-
   final status = quote['status'] as String? ?? 'new';
   if (status == 'accepted' || status == 'declined') {
     throw ApiError(409, 'This quote is already $status');
@@ -553,7 +488,6 @@ Future<Map<String, dynamic>> sendQuote(
     ..['adminNote'] = note.isEmpty ? null : note
     ..['quotedAt'] = now;
 
-  // Screen 31: "Your quote is ready — Jasmine rice, 200 kg at $1.08 per kg."
   await addNotification(
     db,
     userId: quote['userId'] as ObjectId,

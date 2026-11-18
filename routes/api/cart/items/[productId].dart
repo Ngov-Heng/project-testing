@@ -1,8 +1,3 @@
-// WHY: Changes or removes one line of the buyer's cart.
-// Where it sits in the flow: route -> authGuard -> cart_service.
-// PUT sets a new quantity in kg, DELETE takes the line out.
-// Removing by setting 0 kg is not allowed on purpose: DELETE says it clearly.
-
 import 'package:dart_frog/dart_frog.dart';
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/cart_service.dart';

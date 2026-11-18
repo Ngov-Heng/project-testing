@@ -1,9 +1,6 @@
-/*
-Manages the buyer order lifecycle: placing an order from the cart, deducting
-stock safely (with automatic rollback if any item runs out or saving fails),
-generating sequential FH-1001 order numbers, listing/viewing orders,
-cancelling early orders, and reordering past items into the cart.
-*/
+// Buyer orders: what can be ordered, and the status ladder an order moves
+// through.
+// Collections: orders, carts, addresses, products, counters
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/cart_service.dart';
@@ -12,7 +9,6 @@ import 'package:faheng_api/services/pricing_service.dart';
 import 'package:faheng_api/services/settings_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// Every status an order can have, in the order they normally happen.
 const orderStatuses = [
   'pending',
   'processing',
@@ -20,15 +16,9 @@ const orderStatuses = [
   'delivered',
   'cancelled',
 ];
-
-/// The statuses the buyer still sees under the "Active" tab (screen 07).
 const activeOrderStatuses = ['pending', 'processing', 'on_the_way'];
-
-/// The statuses shown under the "Past orders" tab.
 const pastOrderStatuses = ['delivered', 'cancelled'];
 
-/// Which status may follow which. The admin chunk reuses this map, so the
-/// rules live in one place and a buyer can never invent a jump.
 const orderTransitions = <String, List<String>>{
   'pending': ['processing', 'cancelled'],
   'processing': ['on_the_way', 'cancelled'],
@@ -36,44 +26,27 @@ const orderTransitions = <String, List<String>>{
   'delivered': <String>[],
   'cancelled': <String>[],
 };
-
-/// The two delivery windows screen 22 offers.
 const deliveryWindows = ['morning', 'afternoon'];
 
-/// The four reasons screen 28 offers, stored as codes so reports can group
-/// them. The app shows the label; the database keeps the code.
 const cancelReasons = <String, String>{
   'ordered_by_mistake': 'I ordered by mistake',
   'change_address_or_date': 'I want to change the address or date',
   'found_better_price': 'I found a better price',
   'other': 'Other reason',
 };
-
-/// The payment methods the settings document can switch on.
 const paymentMethods = ['paypal', 'cod'];
 
-/// Human names for the payment methods, used in error messages.
 const paymentMethodLabels = {
   'paypal': 'PayPal',
   'cod': 'Cash on delivery',
 };
-
-/// The first order number: FH-1001.
 const firstOrderNumber = 1001;
 
-/// True when an order may move from [from] to [to].
 bool canChangeStatus(String from, String to) =>
     orderTransitions[from]?.contains(to) ?? false;
-
-/// Only the two early statuses may be cancelled, by the buyer or the admin.
 bool canCancel(String status) => status == 'pending' || status == 'processing';
-
-/// Turns a counter value into the order number the screens show (1001 ->
-/// FH-1001).
 String orderNumberFor(int value) => 'FH-$value';
 
-/// The date in Asia/Phnom Penh (UTC+7) right now, as a UTC midnight.
-/// Comparing UTC midnights is what makes "tomorrow" unambiguous.
 DateTime phnomPenhToday({DateTime? nowUtc}) {
   final now = (nowUtc ?? DateTime.now().toUtc()).toUtc();
   final local = now.add(const Duration(hours: 7));
@@ -82,9 +55,6 @@ DateTime phnomPenhToday({DateTime? nowUtc}) {
 
 final _datePattern = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
 
-/// Checks the delivery date from screen 22: a real date, from tomorrow up to
-/// seven days ahead in Phnom Penh time. Returns it as "YYYY-MM-DD" so the
-/// stored value can never shift by a timezone.
 String cleanDeliveryDate(Object? value, {DateTime? nowUtc}) {
   if (value is! String || value.trim().isEmpty) {
     throw const ApiError(400, 'deliveryDate is required as YYYY-MM-DD');
@@ -111,7 +81,6 @@ String cleanDeliveryDate(Object? value, {DateTime? nowUtc}) {
   return text;
 }
 
-/// Checks the delivery window from screen 22 and stores it lowercase.
 String cleanDeliveryWindow(Object? value) {
   if (value is! String || value.trim().isEmpty) {
     throw const ApiError(400, 'deliveryWindow is required');
@@ -123,7 +92,6 @@ String cleanDeliveryWindow(Object? value) {
   return window;
 }
 
-/// Checks the payment method from screen 20 and stores it lowercase.
 String cleanPaymentMethod(Object? value) {
   if (value is! String || value.trim().isEmpty) {
     throw const ApiError(400, 'paymentMethod is required');
@@ -135,32 +103,17 @@ String cleanPaymentMethod(Object? value) {
   return method;
 }
 
-/// A checked cancellation reason: the radio choice from screen 28 plus the
-/// optional free text under it.
 class CancelReason {
-  /// Creates a checked reason.
   const CancelReason({
     required this.code,
     required this.note,
     required this.text,
   });
-
-  /// One of the keys of [cancelReasons], or null for the older free-text form.
   final String? code;
-
-  /// The optional "Tell us more" text.
   final String? note;
-
-  /// What the screens show: the label, with the note after it when there is
-  /// one.
   final String text;
 }
 
-/// Checks the body sent to the cancel route.
-///
-/// Screen 28 sends `reasonCode` (one of the four radios) and an optional
-/// `note`. A plain `reason` string is still accepted, so nothing that already
-/// works breaks.
 CancelReason cleanCancelReason(Object? body) {
   if (body is! Map<String, dynamic>) {
     throw const ApiError(400, 'Body must be a JSON object');
@@ -175,7 +128,6 @@ CancelReason cleanCancelReason(Object? body) {
     throw const ApiError(400, 'note must be 200 characters or less');
   }
   final note = trimmedNote.isEmpty ? null : trimmedNote;
-
   final rawCode = body['reasonCode'];
   if (rawCode != null) {
     if (rawCode is! String) {
@@ -207,7 +159,6 @@ CancelReason cleanCancelReason(Object? body) {
   return CancelReason(code: null, note: note, text: reason);
 }
 
-/// Reads a required hex id from the body (for example an addressId).
 ObjectId cleanObjectId(Object? value, String field) {
   if (value is! String || value.trim().isEmpty) {
     throw ApiError(400, '$field is required');
@@ -219,8 +170,6 @@ ObjectId cleanObjectId(Object? value, String field) {
   }
 }
 
-/// Turns the id in the URL into an ObjectId. A malformed id answers 404, the
-/// same as an id that belongs to another buyer.
 ObjectId parseOrderId(String raw) {
   try {
     return ObjectId.fromHexString(raw.trim());
@@ -229,7 +178,6 @@ ObjectId parseOrderId(String raw) {
   }
 }
 
-/// Formats a kg number for messages and responses without a trailing ".0".
 String kgText(num? value) {
   if (value == null) return '0';
   final number = value.toDouble();
@@ -238,8 +186,6 @@ String kgText(num? value) {
       : number.toString();
 }
 
-/// What the app receives for one order. Money is in dollars here; the stored
-/// document keeps cents.
 Map<String, dynamic> orderView(Map<String, dynamic> order) {
   final createdAt = order['createdAt'];
   final items = ((order['items'] as List?) ?? const <dynamic>[])
@@ -279,7 +225,7 @@ Map<String, dynamic> orderView(Map<String, dynamic> order) {
       for (final entry in history)
         {'status': entry['status'], 'at': entry['at']},
     ],
-    // Chunk 11: a PayPal order carries the moment the money arrived.
+
     if (order['paidAt'] is DateTime)
       'paidAt': (order['paidAt'] as DateTime).toIso8601String(),
     if (order['cancelReason'] != null) 'cancelReason': order['cancelReason'],
@@ -290,29 +236,18 @@ Map<String, dynamic> orderView(Map<String, dynamic> order) {
   };
 }
 
-/// One stock change we already made, kept so it can be undone exactly.
 class _StockChange {
   const _StockChange(this.productId, this.delta);
-
   final ObjectId productId;
-
-  /// Negative when stock was taken away.
   final num delta;
 }
 
-/// A whole kg becomes an int so the stored stock stays an int.
 num _delta(double kg, {required bool restore}) {
   final whole = kg == kg.roundToDouble();
   final value = whole ? kg.round() : kg;
   return restore ? value : -value;
 }
 
-/// Takes [kg] off one product's stock, atomically.
-///
-/// The filter `stock >= kg` is the trick: MongoDB applies a single document
-/// update atomically even on a standalone node, so two buyers cannot both buy
-/// the last bag. If nothing matched, the stock ran out between the check and
-/// the update, and the caller rolls back what it already took.
 Future<void> _deductStock(
   Db db,
   Map<String, dynamic> product,
@@ -320,7 +255,7 @@ Future<void> _deductStock(
   List<_StockChange> done,
 ) async {
   final stock = product['stock'];
-  if (stock is! num) return; // A product with no stock field is unlimited.
+  if (stock is! num) return;
   final delta = _delta(kg, restore: false);
   final result = await db
       .collection('products')
@@ -341,7 +276,6 @@ Future<void> _deductStock(
   done.add(_StockChange(product['_id'] as ObjectId, delta));
 }
 
-/// Undoes every deduction in [done], newest first.
 Future<void> _restoreStock(Db db, List<_StockChange> done) async {
   for (final change in done.reversed) {
     await db
@@ -353,7 +287,6 @@ Future<void> _restoreStock(Db db, List<_StockChange> done) async {
   }
 }
 
-/// Puts one product's kg back (used when an order is cancelled).
 Future<void> giveBackStock(
   Db db,
   ObjectId productId,
@@ -369,9 +302,6 @@ Future<void> giveBackStock(
       );
 }
 
-/// Puts the kg of a cancelled order back on the shelf, item by item. The
-/// buyer's cancel and the admin's cancel both call this, so stock can never
-/// come back twice with two different rules.
 Future<void> restoreStockForOrder(
   Db db,
   Map<String, dynamic> order,
@@ -388,8 +318,6 @@ Future<void> restoreStockForOrder(
   }
 }
 
-/// Copies the address onto the order, so editing the address later never
-/// rewrites an old delivery.
 Map<String, dynamic> addressCopy(Map<String, dynamic> address) {
   return <String, dynamic>{
     'label': address['label'],
@@ -402,10 +330,6 @@ Map<String, dynamic> addressCopy(Map<String, dynamic> address) {
   };
 }
 
-/// Reserves the next order number from the "counters" collection.
-///
-/// `findAndModify` with `$inc` is a single atomic document operation, so two
-/// orders created at the same moment always get different numbers.
 Future<int> nextOrderNumber(Db db) async {
   final counters = db.collection('counters');
   final existing = await counters.findOne(where.eq('_id', 'orders'));
@@ -416,7 +340,6 @@ Future<int> nextOrderNumber(Db db) async {
         'seq': firstOrderNumber - 1,
       });
     } catch (_) {
-      // Another request created it in the same instant; that is fine.
     }
   }
   final result = await counters.modernFindAndModify(
@@ -431,7 +354,6 @@ Future<int> nextOrderNumber(Db db) async {
   return seq.round();
 }
 
-/// The items saved in the buyer's cart.
 Future<List<Map<String, dynamic>>> _cartItems(
   Db db,
   ObjectId userId,
@@ -443,12 +365,6 @@ Future<List<Map<String, dynamic>>> _cartItems(
   ];
 }
 
-/// Creates the order for the buyer's cart (screens 20, 22 and 23).
-///
-/// Order of work, chosen so nothing is half done:
-/// validate -> take the stock -> save the order -> empty the cart.
-/// If the stock runs out the deductions are undone; if saving the order fails
-/// the deductions are undone and the cart is left alone.
 Future<Map<String, dynamic>> createOrder(
   Db db,
   ObjectId userId,
@@ -462,7 +378,6 @@ Future<Map<String, dynamic>> createOrder(
   final deliveryDate = cleanDeliveryDate(body['deliveryDate']);
   final deliveryWindow = cleanDeliveryWindow(body['deliveryWindow']);
   final paymentMethod = cleanPaymentMethod(body['paymentMethod']);
-
   final settings = await loadSettings(db);
   final methods = settings['paymentMethods'] as Map<String, dynamic>;
   if (methods[paymentMethod] != true) {
@@ -476,17 +391,14 @@ Future<Map<String, dynamic>> createOrder(
       .collection('addresses')
       .findOne(where.eq('_id', addressId).eq('userId', userId));
   if (address == null) throw const ApiError(404, 'Address not found');
-
   final saved = await _cartItems(db, userId);
   if (saved.isEmpty) throw const ApiError(400, 'Your cart is empty');
-
   final ids = [for (final item in saved) item['productId'] as ObjectId];
   final products = await db
       .collection('products')
       .find(where.oneFrom('_id', ids).eq('isActive', true))
       .toList();
   final byId = {for (final p in products) (p['_id'] as ObjectId).oid: p};
-
   final lines = <Map<String, dynamic>>[];
   final lineCents = <int>[];
   var totalKg = 0.0;
@@ -503,7 +415,6 @@ Future<Map<String, dynamic>> createOrder(
     final kg = (item['quantityKg'] as num).toDouble();
     final unitCents = toCents(product['pricePerKg'] as num);
     final line = (unitCents * kg).round();
-
     lineCents.add(line);
     totalKg += kg;
     lines.add(<String, dynamic>{
@@ -525,7 +436,6 @@ Future<Map<String, dynamic>> createOrder(
     flatFeeCents: rules.deliveryFeeCents,
     discountEnabled: rules.discountEnabled,
   );
-
   final deducted = <_StockChange>[];
   try {
     for (final item in saved) {
@@ -582,17 +492,10 @@ Future<Map<String, dynamic>> createOrder(
         modify.set('items', <Map<String, dynamic>>[]),
         upsert: true,
       );
-
-  // Screen 31 gets "Order FH-1042 placed" the moment the order exists. The
-  // helper swallows its own errors, so a notification can never fail an order.
   await notifyOrder(db, doc);
-
   return orderView(doc);
 }
 
-/// Screen 07: a page of this buyer's orders, newest first.
-///
-/// `query["tab"]` is "active" or "past"; empty means every order.
 Future<Map<String, dynamic>> listOrders(
   Db db,
   ObjectId userId,
@@ -617,7 +520,6 @@ Future<Map<String, dynamic>> listOrders(
   final countSelector = where.eq('userId', userId);
   if (statuses != null) countSelector.oneFrom('status', statuses);
   final total = await db.collection('orders').count(countSelector);
-
   final selector = where.eq('userId', userId);
   if (statuses != null) selector.oneFrom('status', statuses);
   selector
@@ -634,7 +536,6 @@ Future<Map<String, dynamic>> listOrders(
   };
 }
 
-/// One order, but only if it belongs to this buyer.
 Future<Map<String, dynamic>> findOrder(
   Db db,
   ObjectId userId,
@@ -647,7 +548,6 @@ Future<Map<String, dynamic>> findOrder(
   return orderView(order);
 }
 
-/// Screen 28: the buyer cancels an order and the kg go back on the shelf.
 Future<Map<String, dynamic>> cancelOrder(
   Db db,
   ObjectId userId,
@@ -659,9 +559,7 @@ Future<Map<String, dynamic>> cancelOrder(
     where.eq('_id', orderId).eq('userId', userId),
   );
   if (order == null) throw const ApiError(404, 'Order not found');
-
   final reason = cleanCancelReason(body);
-
   final status = order['status'] as String? ?? '';
   if (!canCancel(status)) {
     throw const ApiError(
@@ -671,7 +569,6 @@ Future<Map<String, dynamic>> cancelOrder(
   }
 
   await restoreStockForOrder(db, order);
-
   final now = DateTime.now().toUtc();
   final history = [
     ...((order['statusHistory'] as List?) ?? const <dynamic>[]),
@@ -693,18 +590,11 @@ Future<Map<String, dynamic>> cancelOrder(
     update.set('cancelNote', reason.note);
   }
   await orders.updateOne(where.id(orderId), update);
-
   final updated = await orders.findOne(where.id(orderId));
   if (updated == null) throw const ApiError(404, 'Order not found');
   return orderView(updated);
 }
 
-/// One call from screen 07: copies the items of one of the buyer's own orders
-/// back into the cart at today's prices.
-///
-/// Anything unavailable is skipped and reported, so the app can tell the buyer
-/// exactly what did not come back. The rules are the cart's own rules, because
-/// it reuses addCartItem instead of copying its checks.
 Future<Map<String, dynamic>> reorderOrder(
   Db db,
   ObjectId userId,
@@ -714,7 +604,6 @@ Future<Map<String, dynamic>> reorderOrder(
       .collection('orders')
       .findOne(where.eq('_id', orderId).eq('userId', userId));
   if (order == null) throw const ApiError(404, 'Order not found');
-
   final skipped = <Map<String, dynamic>>[];
   for (final item in (order['items'] as List?) ?? const []) {
     final line = Map<String, dynamic>.from(item as Map);

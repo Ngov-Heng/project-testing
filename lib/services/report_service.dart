@@ -1,34 +1,18 @@
-/*
-Generates the store owner's sales reports over a chosen date range (defaulting
-to the last 7 days in Phnom Penh time). Calculates total revenue, daily sales
-charts, top-selling rice varieties by kg, and highest-spending customers from
-non-cancelled orders in the "orders", "users", and "addresses" collections.
-*/
+// Sales reports over a bounded date range. All money already in cents.
+// Collections: orders, users, addresses
 
 import 'package:faheng_api/services/admin_order_service.dart';
 import 'package:faheng_api/services/api_error.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// How far back the report looks when no range is given: the last seven days,
-/// today included, which is what the picker on screen 49 starts on.
 const defaultReportDays = 7;
-
-/// The longest range one request may ask for. A year of orders is a small
-/// document; ten years would be a slow request on a laptop.
 const maxReportDays = 366;
 
-/// The date range of a report, both ends included.
 class ReportRange {
-  /// Creates the range.
   const ReportRange({required this.from, required this.to});
-
-  /// The first day, as a UTC midnight.
   final DateTime from;
-
-  /// The last day, as a UTC midnight. The whole day is counted.
   final DateTime to;
 
-  /// Every day of the range, in order, as "YYYY-MM-DD".
   List<String> get days {
     final out = <String>[];
     var day = from;
@@ -40,10 +24,6 @@ class ReportRange {
   }
 }
 
-/// Reads `from` and `to` off screen 49's picker.
-///
-/// Both are optional: no range means the last seven Phnom Penh days, so the
-/// screen has something to draw before anybody touches the picker.
 ReportRange reportRange(
   Map<String, String> query, {
   DateTime? nowUtc,
@@ -51,7 +31,6 @@ ReportRange reportRange(
   final today = phnomPenhDate(nowUtc ?? DateTime.now().toUtc());
   final rawFrom = (query['from'] ?? '').trim();
   final rawTo = (query['to'] ?? '').trim();
-
   final to = rawTo.isEmpty ? today : cleanDay(rawTo, 'to');
   final from = rawFrom.isEmpty
       ? to.subtract(const Duration(days: defaultReportDays - 1))
@@ -66,11 +45,6 @@ ReportRange reportRange(
   return ReportRange(from: from, to: to);
 }
 
-/// The three cards at the top of screen 49.
-///
-/// Cancelled orders are not sales: the subtitle under the revenue card says so,
-/// so they are dropped before anything is added up. `cancelled` is still
-/// returned, because a report that hides what it ignored cannot be trusted.
 Map<String, dynamic> reportSummary(List<Map<String, dynamic>> orders) {
   var revenue = 0;
   var counted = 0;
@@ -97,10 +71,6 @@ Map<String, dynamic> reportSummary(List<Map<String, dynamic>> orders) {
   };
 }
 
-/// The line chart: one point per day of the range, zero filled.
-///
-/// A day with no orders still needs a point, otherwise the line would jump from
-/// Tuesday straight to Friday and the chart would lie about the week.
 List<Map<String, dynamic>> dailyRevenue(
   List<Map<String, dynamic>> orders,
   ReportRange range,
@@ -131,11 +101,6 @@ List<Map<String, dynamic>> dailyRevenue(
   ];
 }
 
-/// "Top selling products - By kg sold" on screen 49.
-///
-/// The kg are what was actually weighed, not what was ordered: a cancelled
-/// order never reached a shelf, and this list shares the same "no sales"
-/// filter as the revenue card.
 List<Map<String, dynamic>> topSellingProducts(
   List<Map<String, dynamic>> orders, {
   int limit = 5,
@@ -173,7 +138,6 @@ List<Map<String, dynamic>> topSellingProducts(
   return rows.take(limit).toList();
 }
 
-/// "Best customers - By spend in this period" on screen 49.
 List<Map<String, dynamic>> bestCustomers(
   List<Map<String, dynamic>> orders,
   Map<String, Map<String, dynamic>> users, {
@@ -207,11 +171,6 @@ List<Map<String, dynamic>> bestCustomers(
   return rows.take(limit).toList();
 }
 
-/// Screen 49, all of it, in one request.
-///
-/// The orders are fetched once and grouped in Dart: a shop with thousands of
-/// orders in a month is still small enough for that, and one query is easier to
-/// explain than four aggregation pipelines.
 Future<Map<String, dynamic>> salesReport(
   Db db,
   Map<String, String> query, {
@@ -240,7 +199,6 @@ Future<Map<String, dynamic>> salesReport(
           .find(where.oneFrom('_id', userIds))
           .toList();
 
-  // Screen 49 shows the customers' town, which lives on their address.
   final addressDocs = userIds.isEmpty
       ? const <Map<String, dynamic>>[]
       : await db

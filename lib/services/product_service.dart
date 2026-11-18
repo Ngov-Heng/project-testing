@@ -1,22 +1,13 @@
-/*
-Manages the store's rice products: validates product details (name, category,
-price per kg, whole-kg stock, description), filters and searches the admin
-catalogue, tracks low-stock alerts (under 100 kg), and handles creating,
-updating, and restocking items in the "products" collection.
-*/
+// Products and their categories, including the 100 kg low-stock line.
+// Collections: products, categories
 
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/json_safe.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// Screen 43 says "Reorder level is 100 kg per product", so anything under
-/// this is shown as low stock and counted in the Low stock card.
 const int lowStockKg = 100;
-
-/// Screen 42 counts the short description as "90 / 160".
 const int maxDescriptionLength = 160;
 
-/// The four values the admin stock filter (screen 41) offers.
 const List<String> stockLevelFilters = <String>[
   'all',
   'in_stock',
@@ -24,21 +15,18 @@ const List<String> stockLevelFilters = <String>[
   'out',
 ];
 
-/// The three sort orders screen 15 offers, plus `name` as the default.
 const List<String> productSorts = <String>[
   'name',
   'price_asc',
   'price_desc',
 ];
 
-/// Turns a stored stock number into the label screens 41 and 43 print.
 String stockStatus(int stock) {
   if (stock <= 0) return 'out';
   if (stock < lowStockKg) return 'low';
   return 'in_stock';
 }
 
-/// Reads the product name from screen 42.
 String cleanProductName(Object? value) {
   if (value is! String || value.trim().isEmpty) {
     throw const ApiError(400, 'name is required');
@@ -50,9 +38,6 @@ String cleanProductName(Object? value) {
   return name;
 }
 
-/// Reads "Price per kg" from screen 42. Stored as dollars, exactly like the
-/// products that were already in the database, because cart and order code
-/// reads `pricePerKg` in dollars.
 double cleanPricePerKg(Object? value) {
   if (value is! num) {
     throw const ApiError(400, 'pricePerKg is required as a number');
@@ -66,7 +51,6 @@ double cleanPricePerKg(Object? value) {
   return double.parse(value.toStringAsFixed(2));
 }
 
-/// Reads "Stock in kg" from screen 42. Whole kilograms only, never negative.
 int cleanStockKg(Object? value) {
   if (value is num) {
     if (value < 0) {
@@ -80,7 +64,6 @@ int cleanStockKg(Object? value) {
   throw const ApiError(400, 'stock is required as a number');
 }
 
-/// Reads the optional "Short description" from screen 42.
 String? cleanDescription(Object? value) {
   if (value == null) return null;
   if (value is! String) {
@@ -96,9 +79,6 @@ String? cleanDescription(Object? value) {
   return text.isEmpty ? null : text;
 }
 
-/// Reads the optional photo. The admin mock uploads a file; until there is a
-/// file store, the route accepts the URL the upload will produce, or the icon
-/// name the seed uses.
 String? cleanImage(Object? value) {
   if (value == null) return null;
   if (value is! String) {
@@ -112,7 +92,6 @@ String? cleanImage(Object? value) {
   return text;
 }
 
-/// Reads the "Active" switch from screen 42. It defaults to on.
 bool cleanIsActive(Object? value) {
   if (value == null) return true;
   if (value is! bool) {
@@ -121,7 +100,6 @@ bool cleanIsActive(Object? value) {
   return value;
 }
 
-/// Reads the featured flag the home screen (02) uses. Defaults to off.
 bool cleanIsFeatured(Object? value) {
   if (value == null) return false;
   if (value is! bool) {
@@ -130,9 +108,7 @@ bool cleanIsFeatured(Object? value) {
   return value;
 }
 
-/// A product that passed every check on screen 42, ready to store.
 class CleanProduct {
-  /// Creates a checked product.
   const CleanProduct({
     required this.name,
     required this.category,
@@ -143,35 +119,16 @@ class CleanProduct {
     this.description,
     this.image,
   });
-
-  /// The variety name shown in the list.
   final String name;
-
-  /// Category name, which must match a document in `categories`.
   final String category;
-
-  /// Dollars per kilogram.
   final double pricePerKg;
-
-  /// Whole kilograms on the shelf.
   final int stock;
-
-  /// False means hidden from the storefront (screen 42's switch).
   final bool isActive;
-
-  /// True means it appears in the home screen's featured row.
   final bool isFeatured;
-
-  /// Short description, at most 160 characters.
   final String? description;
-
-  /// Photo URL or icon name.
   final String? image;
 }
 
-/// Checks a category name against the `categories` collection, because screen
-/// 42 picks from a dropdown: a free-typed name that is not in the list would
-/// create a category the admin screen never shows.
 Future<void> ensureCategoryExists(Db db, String category) async {
   final found = await db
       .collection('categories')
@@ -181,7 +138,6 @@ Future<void> ensureCategoryExists(Db db, String category) async {
   }
 }
 
-/// Reads the whole body of screen 42.
 Future<CleanProduct> cleanProduct(Db db, Object? body) async {
   if (body is! Map<String, dynamic>) {
     throw const ApiError(400, 'Body must be a JSON object');
@@ -205,7 +161,6 @@ Future<CleanProduct> cleanProduct(Db db, Object? body) async {
   );
 }
 
-/// The document that is written to the `products` collection.
 Map<String, dynamic> productDoc(CleanProduct clean) {
   return <String, dynamic>{
     'name': clean.name,
@@ -219,14 +174,9 @@ Map<String, dynamic> productDoc(CleanProduct clean) {
   };
 }
 
-/// What the public list and one-product route send: the document as it is,
-/// with `_id` as a hex string and any date turned into a string.
 Map<String, dynamic> publicProductView(Map<String, dynamic> doc) =>
     rawDocView(doc);
 
-/// What the admin screens get back: `id` (like every route since chunk 3) plus
-/// the computed stock status, so screens 41 and 43 never have to know the
-/// 100 kg rule.
 Map<String, dynamic> adminProductView(Map<String, dynamic> doc) {
   final stock = (doc['stock'] as num?)?.toInt() ?? 0;
   final updatedAt = doc['updatedAt'];
@@ -247,9 +197,7 @@ Map<String, dynamic> adminProductView(Map<String, dynamic> doc) {
   };
 }
 
-/// Reads the filters on screen 41: search, category and stock level.
 class AdminProductFilters {
-  /// Creates the checked filter set.
   const AdminProductFilters({
     required this.page,
     required this.limit,
@@ -257,24 +205,13 @@ class AdminProductFilters {
     this.search,
     this.category,
   });
-
-  /// 1-based page number.
   final int page;
-
-  /// How many rows per page (screen 41 asks for all of them at once).
   final int limit;
-
-  /// all, in_stock, low or out.
   final String stockLevel;
-
-  /// Free text typed in "Search products".
   final String? search;
-
-  /// Category name from the "All categories" dropdown.
   final String? category;
 }
 
-/// Reads the query string of screen 41.
 AdminProductFilters adminProductFilters(Map<String, String> query) {
   final page = int.tryParse(query['page'] ?? '') ?? 1;
   final limit = int.tryParse(query['limit'] ?? '') ?? 20;
@@ -299,13 +236,6 @@ AdminProductFilters adminProductFilters(Map<String, String> query) {
   );
 }
 
-/// Builds the filter half of screen 41's query. The search box is not in
-/// here: it matches text in two fields and the customer's name lives in
-/// `users`, so it is resolved to a list of ids first and added with `oneFrom`.
-///
-/// The builder is used directly (`count()` and `find()`), never wrapped in
-/// `where.raw(map)`: that call stores the map but drops it from the query, so
-/// every filter would return the whole table.
 SelectorBuilder buildProductQuery(AdminProductFilters filters) {
   final selector = SelectorBuilder();
   if (filters.category != null) {
@@ -322,7 +252,6 @@ SelectorBuilder buildProductQuery(AdminProductFilters filters) {
   return selector;
 }
 
-/// The ids of the products whose name or category contains [term].
 Future<List<ObjectId>> searchProductIds(Db db, String term) async {
   final pattern = RegExp.escape(term);
   final byName = await db
@@ -338,8 +267,6 @@ Future<List<ObjectId>> searchProductIds(Db db, String term) async {
   }.toList();
 }
 
-/// The list on screen 41: every product, active or not, with the totals the
-/// header prints ("8 rice products - 3,268 kg in stock").
 Future<Map<String, dynamic>> adminListProducts(
   Db db,
   Map<String, String> query,
@@ -378,8 +305,6 @@ Future<Map<String, dynamic>> adminListProducts(
   };
 }
 
-/// The numbers in the header of screen 41 and the cards of screen 43. They
-/// count the whole shop, not the filtered page.
 Future<Map<String, dynamic>> _productSummary(Db db) async {
   final everything = await db.collection('products').find().toList();
   final totalKg = everything.fold<int>(
@@ -401,8 +326,6 @@ Future<Map<String, dynamic>> _productSummary(Db db) async {
   };
 }
 
-/// Screen 43: the three cards and the stock table. Every product, lowest
-/// stock first, because that is the order the admin needs to act on.
 Future<Map<String, dynamic>> stockOverview(Db db) async {
   final docs = await db
       .collection('products')
@@ -425,7 +348,6 @@ Future<Map<String, dynamic>> stockOverview(Db db) async {
   };
 }
 
-/// Screen 42's Save product button.
 Future<Map<String, dynamic>> createProduct(Db db, Object? body) async {
   final clean = await cleanProduct(db, body);
   final now = DateTime.now().toUtc();
@@ -446,7 +368,6 @@ Future<Map<String, dynamic>> createProduct(Db db, Object? body) async {
   return adminProductView(saved);
 }
 
-/// The id from the URL, or the message screen 41 can show.
 ObjectId parseProductId(String raw) {
   try {
     return ObjectId.fromHexString(raw);
@@ -455,8 +376,6 @@ ObjectId parseProductId(String raw) {
   }
 }
 
-/// Screen 42 opened on an existing product: the form posts every field again,
-/// so this is a full replace of the editable fields only.
 Future<Map<String, dynamic>> updateProduct(
   Db db,
   String rawId,
@@ -486,9 +405,6 @@ Future<Map<String, dynamic>> updateProduct(
   return adminProductView(doc);
 }
 
-/// Screen 43's Restock button. It sets the new level in kg rather than adding
-/// to it, because the button opens a box the admin types the counted stock
-/// into; `restockHistory` keeps the audit trail.
 Future<Map<String, dynamic>> restockProduct(
   Db db,
   String rawId,

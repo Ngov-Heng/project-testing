@@ -1,52 +1,28 @@
-/*
-Manages customer views for the store owner: listing and filtering buyers
-(business vs. household) and viewing a single customer's profile, delivery
-address, spending totals, and order history. Spending stats are calculated
-live from non-cancelled orders across the "users", "orders", and "addresses"
-collections.
-*/
+// The admin's customer list, and the order history behind each customer.
+// Collections: users, orders, addresses
 
 import 'package:faheng_api/services/admin_order_service.dart';
 import 'package:faheng_api/services/api_error.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// The two kinds of customer the badge on screens 45 and 46 can show.
 const customerTypes = <String>['business', 'household'];
 
-/// What one customer's orders add up to.
-///
-/// A cancelled order is not a purchase: it is left out of the order count, the
-/// money, the average and the last order date, so the four columns on screen 45
-/// and the three cards on screen 46 always tell the same story.
 class CustomerTotals {
-  /// Creates the totals.
   const CustomerTotals({
     required this.orders,
     required this.totalSpentCents,
     required this.firstOrderAt,
     required this.lastOrderAt,
   });
-
-  /// How many orders count as purchases.
   final int orders;
-
-  /// Everything those orders were worth, in cents.
   final int totalSpentCents;
-
-  /// The oldest of them, or null for a customer who never ordered.
   final DateTime? firstOrderAt;
-
-  /// The newest of them.
   final DateTime? lastOrderAt;
 
-  /// Total spent divided by orders, in cents, rounded once. Zero orders means
-  /// zero, not a division by zero.
   int get averageOrderCents =>
       orders == 0 ? 0 : (totalSpentCents / orders).round();
 }
 
-/// Adds up a customer's orders. Pure, so the arithmetic can be tested without
-/// a database.
 CustomerTotals customerTotals(List<Map<String, dynamic>> orders) {
   var count = 0;
   var cents = 0;
@@ -70,8 +46,6 @@ CustomerTotals customerTotals(List<Map<String, dynamic>> orders) {
   );
 }
 
-/// The town shown under a customer's name: their default address, or their
-/// newest one when nothing is marked default.
 String? townOf(List<Map<String, dynamic>> addresses) {
   if (addresses.isEmpty) return null;
   for (final address in addresses) {
@@ -80,7 +54,6 @@ String? townOf(List<Map<String, dynamic>> addresses) {
   return addresses.last['town'] as String?;
 }
 
-/// One row of screen 45.
 Map<String, dynamic> adminCustomerRow(
   Map<String, dynamic> user, {
   required CustomerTotals totals,
@@ -101,7 +74,6 @@ Map<String, dynamic> adminCustomerRow(
   };
 }
 
-/// Reads `customerType` off screen 45's dropdown.
 String? cleanCustomerType(Map<String, String> query) {
   final raw = (query['customerType'] ?? 'all').trim().toLowerCase();
   if (raw == 'all' || raw.isEmpty) return null;
@@ -114,7 +86,6 @@ String? cleanCustomerType(Map<String, String> query) {
   return raw;
 }
 
-/// The buyers only: the shop owner is not one of the shop's customers.
 SelectorBuilder buildCustomerQuery(Map<String, String> query) {
   final selector = SelectorBuilder()..ne('role', 'admin');
   final type = cleanCustomerType(query);
@@ -122,7 +93,6 @@ SelectorBuilder buildCustomerQuery(Map<String, String> query) {
   return selector;
 }
 
-/// Addresses of a set of customers, in one query.
 Future<Map<String, List<Map<String, dynamic>>>> _addressesFor(
   Db db,
   List<ObjectId> userIds,
@@ -137,7 +107,7 @@ Future<Map<String, List<Map<String, dynamic>>>> _addressesFor(
     final key = (doc['userId'] as ObjectId).oid;
     grouped.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(doc);
   }
-  // Newest last, so townOf's fallback ("the newest one") is the last element.
+
   for (final list in grouped.values) {
     list.sort((a, b) {
       final left = a['createdAt'];
@@ -149,7 +119,6 @@ Future<Map<String, List<Map<String, dynamic>>>> _addressesFor(
   return grouped;
 }
 
-/// Orders of a set of customers, in one query.
 Future<Map<String, List<Map<String, dynamic>>>> _ordersFor(
   Db db,
   List<ObjectId> userIds,
@@ -167,12 +136,6 @@ Future<Map<String, List<Map<String, dynamic>>>> _ordersFor(
   return grouped;
 }
 
-/// Screen 45: one page of customers, plus the counts in the subtitle
-/// ("64 customers · 12 businesses · 52 households").
-///
-/// The page is ordered by name. The mock is ordered by last order date, but
-/// that value lives in another collection: sorting by it would mean loading
-/// every order in the shop to sort a page of eight.
 Future<Map<String, dynamic>> adminListCustomers(
   Db db,
   Map<String, String> query,
@@ -185,7 +148,6 @@ Future<Map<String, dynamic>> adminListCustomers(
 
   final users = db.collection('users');
   final selector = buildCustomerQuery(query);
-
   final term = (query['q'] ?? '').trim();
   if (term.isNotEmpty) {
     final pattern = RegExp.escape(term);
@@ -223,7 +185,6 @@ Future<Map<String, dynamic>> adminListCustomers(
     );
   }
   final docs = await users.find(paged).toList();
-
   final ids = [for (final doc in docs) doc['_id'] as ObjectId];
   final orders = await _ordersFor(db, ids);
   final addresses = await _addressesFor(db, ids);
@@ -250,8 +211,6 @@ Future<Map<String, dynamic>> adminListCustomers(
   };
 }
 
-/// The three numbers in the subtitle of screen 45. They describe the whole
-/// shop, not the filtered page.
 Future<Map<String, dynamic>> _customerSummary(Db db) async {
   final buyers = await db
       .collection('users')
@@ -274,9 +233,6 @@ Future<Map<String, dynamic>> _customerSummary(Db db) async {
 }
 
 ObjectId _parseCustomerId(String raw) {
-  // Same rule as every other id in this API: a value that is not an id is a
-  // 404 "not found", not a 500. A customer typing a broken link learns nothing
-  // either way, and the server stays quiet.
   try {
     return ObjectId.fromHexString(raw.trim());
   } catch (_) {
@@ -284,7 +240,6 @@ ObjectId _parseCustomerId(String raw) {
   }
 }
 
-/// Loads one customer, refusing anybody who is not a buyer.
 Future<Map<String, dynamic>> _findCustomer(Db db, String rawId) async {
   final user = await db
       .collection('users')
@@ -293,8 +248,6 @@ Future<Map<String, dynamic>> _findCustomer(Db db, String rawId) async {
   return user;
 }
 
-/// Screen 46: contact details, the three cards, and the five most recent
-/// orders. `orders` is the whole history, `showing` the part on the screen.
 Future<Map<String, dynamic>> adminCustomerDetail(Db db, String rawId) async {
   final user = await _findCustomer(db, rawId);
   final userId = user['_id'] as ObjectId;
@@ -304,7 +257,6 @@ Future<Map<String, dynamic>> adminCustomerDetail(Db db, String rawId) async {
       .find(where.eq('userId', userId))
       .toList();
   final totals = customerTotals(orders);
-
   final addresses = await _addressesFor(db, [userId]);
   final list = addresses[userId.oid] ?? const <Map<String, dynamic>>[];
   Map<String, dynamic>? chosen;
@@ -362,7 +314,6 @@ Future<Map<String, dynamic>> adminCustomerDetail(Db db, String rawId) async {
   };
 }
 
-/// The "View all orders" page behind screen 46, same shape as screen 38's list.
 Future<Map<String, dynamic>> adminCustomerOrders(
   Db db,
   String rawId,
@@ -378,7 +329,6 @@ Future<Map<String, dynamic>> adminCustomerOrders(
   final selector = SelectorBuilder()
     ..eq('userId', user['_id'] as ObjectId)
     ..ne('status', 'cancelled');
-
   final collection = db.collection('orders');
   final total = await collection.count(selector);
   final docs = await collection

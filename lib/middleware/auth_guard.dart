@@ -5,9 +5,6 @@ import 'package:mongo_dart/mongo_dart.dart';
 Response _unauthorized() =>
     Response.json(statusCode: 401, body: {'error': 'Unauthorized'});
 
-/// Checks the login token, loads the user and gives it to the routes below.
-///
-/// Routes read the user with `context.read<Map<String, dynamic>>()`.
 Handler authGuard(Handler handler) {
   return (context) async {
     final header = context.request.headers['authorization'];
@@ -17,7 +14,6 @@ Handler authGuard(Handler handler) {
 
     final userId = verifyToken(header.substring(7).trim());
     if (userId == null) return _unauthorized();
-
     final ObjectId id;
     try {
       id = ObjectId.fromHexString(userId);

@@ -1,21 +1,8 @@
-// The cart rules, tested without a database.
-//
-// What is here: the pure half of cart_service - the rounding, the quantity a
-// buyer may type, the stock guard, and the three list operations every cart
-// write goes through. That is where a silent bug would cost money: a duplicated
-// line, a dropped fraction of a kilo, a removal that reports success twice.
-//
-// What is NOT here: the Mongo reads and writes (buildCartView, addCartItem
-// and friends). Those need a live database, so they are proved by the Bruno
-// folder "Gaps-Cart-Catalog-Wishlist" (add, change, remove, clear, totals) and
-// by every live suite that puts something in a cart before ordering.
-
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/cart_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -25,13 +12,10 @@ ApiError _apiError(void Function() action) {
   fail('expected an ApiError, but nothing was thrown');
 }
 
-/// A stable product id, so two lines can be told apart.
 ObjectId _id(String hex) => ObjectId.fromHexString(hex);
-
 final _jasmine = _id('65f1a0000000000000000001');
 final _sticky = _id('65f1a0000000000000000002');
 
-/// One cart line, the way the carts collection stores it.
 Map<String, dynamic> _line(ObjectId productId, num kg) => <String, dynamic>{
   'productId': productId,
   'quantityKg': kg,
@@ -51,7 +35,6 @@ void main() {
     });
 
     test('the classic float case does not leak', () {
-      // 0.1 + 0.2 is 0.30000000000000004 in Dart.
       expect(roundKg(0.1 + 0.2), 0.3);
     });
   });
@@ -70,7 +53,6 @@ void main() {
     });
 
     test('something that rounds to zero is refused too', () {
-      // 0.004 kg is 4 grams: below the 0.01 kg minimum.
       final error = _apiError(() => checkedQuantityKg(0.004));
       expect(error.statusCode, 400);
     });

@@ -25,6 +25,5 @@ Future<Response> onRequest(RequestContext context) async {
     item['id'] = (p['_id'] as ObjectId).oid;
     return item;
   }).toList();
-
   return Response.json(body: {'items': items, 'count': items.length});
 }

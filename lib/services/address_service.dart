@@ -1,20 +1,14 @@
+// Delivery addresses. One default per buyer, ten in total.
+// Collections: addresses
+
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/validators.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/*
-Takes raw, untrusted JSON sent from the mobile app, checks every field (label, phone format, lat/lng limits, string lengths), throws a 400 ApiError if anything is wrong, and returns a strongly-typed, safe CleanAddress object.
-*/
-
-/// The labels screen 19 offers, stored lowercase. The app capitalises them.
 const addressLabels = ['home', 'work', 'other'];
-
-/// How many addresses one buyer may save.
 const maxAddressesPerUser = 10;
 
-/// An address that passed every check, ready to store.
 class CleanAddress {
-  /// Creates a checked address.
   const CleanAddress({
     required this.label,
     required this.receiverName,
@@ -25,34 +19,16 @@ class CleanAddress {
     required this.lng,
     required this.isDefault,
   });
-
-  /// home, work or other.
   final String label;
-
-  /// Who receives the delivery.
   final String receiverName;
-
-  /// Phone with spaces, dashes and dots removed.
   final String phone;
-
-  /// House number and street.
   final String street;
-
-  /// Town or city (free text, the app owns the dropdown list).
   final String town;
-
-  /// Latitude of the map pin, null when the app sent none.
   final double? lat;
-
-  /// Longitude of the map pin, null when the app sent none.
   final double? lng;
-
-  /// True when this address should become the buyer's default.
   final bool isDefault;
 }
 
-/// Reads a required string field, trimmed, and refuses a missing or too long
-/// value with a 400 that names the field.
 String _requiredText(Object? value, String field, int maxLength) {
   if (value is! String || value.trim().isEmpty) {
     throw ApiError(400, '$field is required');
@@ -64,8 +40,6 @@ String _requiredText(Object? value, String field, int maxLength) {
   return trimmed;
 }
 
-/// Reads an optional map coordinate. A missing value is allowed (the app may
-/// not have a pin yet); a wrong one is refused.
 double? _coordinate(Object? value, String field, num limit) {
   if (value == null) return null;
   if (value is! num) {
@@ -77,8 +51,6 @@ double? _coordinate(Object? value, String field, num limit) {
   return value.toDouble();
 }
 
-/// Checks the body sent by screen 19 and returns the clean address.
-/// Throws ApiError(400) naming the field that is wrong.
 CleanAddress cleanAddressInput(Object? body) {
   if (body is! Map<String, dynamic>) {
     throw const ApiError(400, 'Body must be a JSON object');
@@ -94,7 +66,6 @@ CleanAddress cleanAddressInput(Object? body) {
   }
 
   final receiverName = _requiredText(body['receiverName'], 'receiverName', 80);
-
   final rawPhone = body['phone'];
   if (rawPhone is! String || rawPhone.trim().isEmpty) {
     throw const ApiError(400, 'phone is required');
@@ -108,7 +79,6 @@ CleanAddress cleanAddressInput(Object? body) {
   final town = _requiredText(body['town'], 'town', 60);
   final lat = _coordinate(body['lat'], 'lat', 90);
   final lng = _coordinate(body['lng'], 'lng', 180);
-
   final rawDefault = body['isDefault'];
   if (rawDefault != null && rawDefault is! bool) {
     throw const ApiError(400, 'isDefault must be true or false');
@@ -126,15 +96,6 @@ CleanAddress cleanAddressInput(Object? body) {
   );
 }
 
-/*
-Converts raw MongoDB documents into clean JSON maps for the 
-app (turning _id ObjectId into a string 'id'), 
-safely parses URL IDs, and provides small reusable 
-helpers for sorting and resetting default flags.
-*/
-
-/// The shape the app receives for one address. One address is always one
-/// object with an "id", never a raw database document.
 Map<String, dynamic> addressView(Map<String, dynamic> doc) {
   final createdAt = doc['createdAt'];
   return <String, dynamic>{
@@ -151,8 +112,6 @@ Map<String, dynamic> addressView(Map<String, dynamic> doc) {
   };
 }
 
-/// Turns the id in the URL into an ObjectId. A malformed id is answered with
-/// 404, exactly like an id that belongs to somebody else.
 ObjectId parseAddressId(String raw) {
   try {
     return ObjectId.fromHexString(raw.trim());
@@ -161,8 +120,6 @@ ObjectId parseAddressId(String raw) {
   }
 }
 
-/// Clears the default flag on all of this buyer's addresses. Called right
-/// before another address becomes the default, so only one can ever be it.
 Future<void> _clearDefaults(DbCollection collection, ObjectId userId) async {
   await collection.updateMany(
     where.eq('userId', userId),
@@ -170,7 +127,6 @@ Future<void> _clearDefaults(DbCollection collection, ObjectId userId) async {
   );
 }
 
-/// Oldest first, so the list keeps a stable order after a default changes.
 int _byCreatedAt(Map<String, dynamic> a, Map<String, dynamic> b) {
   final aAt = a['createdAt'] as DateTime?;
   final bAt = b['createdAt'] as DateTime?;
@@ -178,7 +134,6 @@ int _byCreatedAt(Map<String, dynamic> a, Map<String, dynamic> b) {
   return aAt.compareTo(bAt);
 }
 
-/// Screen 18: this buyer's addresses, the default one first.
 Future<List<Map<String, dynamic>>> listAddresses(
   Db db,
   ObjectId userId,
@@ -188,6 +143,8 @@ Future<List<Map<String, dynamic>>> listAddresses(
       .find(where.eq('userId', userId))
       .toList();
   docs
+    // Two sorts on purpose. List.sort is not stable, so the
+    // default-first pass has to run last.
     ..sort(_byCreatedAt)
     ..sort((a, b) {
       final aDefault = a['isDefault'] == true ? 0 : 1;
@@ -197,8 +154,6 @@ Future<List<Map<String, dynamic>>> listAddresses(
   return [for (final doc in docs) addressView(doc)];
 }
 
-/// Adds an address. The first address a buyer saves becomes the default, so
-/// checkout always has one to show.
 Future<Map<String, dynamic>> createAddress(
   Db db,
   ObjectId userId,
@@ -233,10 +188,6 @@ Future<Map<String, dynamic>> createAddress(
   return addressView(doc);
 }
 
-/// Replaces the editable fields of one address.
-/// The default flag can only move by making *another* address the default, so
-/// an update that says "not default" on the current default keeps it default -
-/// otherwise the buyer could end up with no default at all.
 Future<Map<String, dynamic>> updateAddress(
   Db db,
   ObjectId userId,
@@ -248,7 +199,6 @@ Future<Map<String, dynamic>> updateAddress(
     where.eq('userId', userId).eq('_id', addressId),
   );
   if (existing == null) throw const ApiError(404, 'Address not found');
-
   final wasDefault = existing['isDefault'] == true;
   if (clean.isDefault) await _clearDefaults(collection, userId);
 
@@ -261,6 +211,8 @@ Future<Map<String, dynamic>> updateAddress(
     'town': clean.town,
     'lat': clean.lat,
     'lng': clean.lng,
+    // An edit can keep the default flag, never clear it. Otherwise the
+    // buyer could end up with no default address at all.
     'isDefault': clean.isDefault || wasDefault,
     'updatedAt': DateTime.now().toUtc(),
   };
@@ -271,10 +223,6 @@ Future<Map<String, dynamic>> updateAddress(
   return addressView(doc);
 }
 
-/// Deletes one address and returns the remaining list.
-///
-/// If the default was deleted, the oldest remaining address is promoted, so
-/// there is always exactly one default while the buyer has any address.
 Future<List<Map<String, dynamic>>> deleteAddress(
   Db db,
   ObjectId userId,
@@ -285,9 +233,9 @@ Future<List<Map<String, dynamic>>> deleteAddress(
     where.eq('userId', userId).eq('_id', addressId),
   );
   if (existing == null) throw const ApiError(404, 'Address not found');
-
   await collection.deleteOne(where.eq('userId', userId).eq('_id', addressId));
 
+  // The default got deleted, so the oldest remaining one takes over.
   if (existing['isDefault'] == true) {
     final rest = await collection.find(where.eq('userId', userId)).toList();
     if (rest.isNotEmpty) {

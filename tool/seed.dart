@@ -1,18 +1,7 @@
-// WHY: Chunk 6 ends with a shop that looks like a shop: 4 categories and 12
-// rice varieties, three of them under the 100 kg reorder level (so screen 43
-// has something to show) and three marked featured (so screen 02's row is not
-// empty).
-// Where it sits in the flow: run it by hand, once, after the categories exist:
-//   dart run tool/seed.dart
-// It reads the same MONGO_URL the API reads, so it fills the same database.
-// It only inserts what is missing, by name, so running it twice is safe and it
-// never deletes a product that orders or carts may point at.
-
 import 'dart:io';
 
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// One row of the catalogue below.
 class SeedProduct {
   const SeedProduct(
     this.name,
@@ -23,7 +12,6 @@ class SeedProduct {
     this.isFeatured = false,
     this.image = 'rice_bag',
   });
-
   final String name;
   final String category;
   final double pricePerKg;
@@ -137,7 +125,6 @@ Future<void> main() async {
   final db = await Db.create(url);
   await db.open();
   stdout.writeln('seeding $url');
-
   final categories = db.collection('categories');
   var order = 1;
   var addedCategories = 0;

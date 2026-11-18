@@ -1,9 +1,6 @@
-/*
-Manages PayPal payments for buyer orders: starts a payment attempt with an
-approval URL, checks whether the payment is still pending or finished, and
-captures the result. If approved, it marks the order paid and notifies the
-buyer; if declined, it cancels the order and puts the rice stock back.
-*/
+// Payment state machine. The two provider calls are stubs; everything around
+// them is real.
+// Collections: payments, orders
 
 import 'dart:math';
 
@@ -12,18 +9,12 @@ import 'package:faheng_api/services/notification_service.dart';
 import 'package:faheng_api/services/order_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// The states a payment attempt can be in, in the order they happen.
 const paymentStates = <String>['created', 'captured', 'failed'];
-
-/// The provider name stored on every payment.
 const paypalProvider = 'paypal';
 
-/// The amount to charge for an order: the grand total the buyer saw on 21a,
-/// which already includes the delivery fee. In cents, like every other amount.
 int paypalAmountCents(Map<String, dynamic> order) =>
     ((order['grandTotalCents'] as num?) ?? 0).round();
 
-/// The order a payment id belongs to, from a URL.
 ObjectId parsePaymentOrderId(String raw) {
   try {
     return ObjectId.fromHexString(raw.trim());
@@ -32,22 +23,12 @@ ObjectId parsePaymentOrderId(String raw) {
   }
 }
 
-/// The narrowest check: is this even a PayPal order? Pure.
-///
-/// The capture path runs this first and the rest of [checkPaypalOrder] last, so
-/// that a double tap on "pay" is answered with the state of *the payment*
-/// ("already captured"), which is more useful than the state of the order.
 void checkPaypalMethod(Map<String, dynamic> order) {
   if (order['paymentMethod'] != paypalProvider) {
     throw const ApiError(400, 'This order is paid on delivery');
   }
 }
 
-/// Refuses a PayPal payment on an order that cannot take one. Pure, so all the
-/// rules can be tested without a database.
-///
-/// The order of the checks is the order of the messages: what the order is
-/// first, then whether it can still be paid.
 void checkPaypalOrder(Map<String, dynamic> order) {
   checkPaypalMethod(order);
   if (order['status'] == 'cancelled') {
@@ -58,7 +39,6 @@ void checkPaypalOrder(Map<String, dynamic> order) {
   }
 }
 
-/// A payment as the app receives it. No raw document, no `_id`.
 Map<String, dynamic> paymentView(Map<String, dynamic> doc) {
   final createdAt = doc['createdAt'];
   final capturedAt = doc['capturedAt'];
@@ -76,8 +56,6 @@ Map<String, dynamic> paymentView(Map<String, dynamic> doc) {
   };
 }
 
-/// The id PayPal would have given the payment. A sandbox id is prefixed so
-/// nobody mistakes one for a real PayPal order.
 String newSandboxPaypalOrderId([Random? random]) {
   final rng = random ?? Random.secure();
   final part = List<String>.generate(
@@ -87,14 +65,9 @@ String newSandboxPaypalOrderId([Random? random]) {
   return 'SBX-${part.toUpperCase()}';
 }
 
-/// Where screen 21a sends the buyer. In a real integration this is the
-/// `approve` link PayPal returns; here it points back at this API, and the app
-/// finishes the flow with the capture call.
 String sandboxApprovalUrl(String paypalOrderId) =>
     '/api/payments/paypal/approve?token=$paypalOrderId';
 
-/// Loads one of this buyer's orders, or answers 404 - never 403, because a
-/// stranger must not learn that the order exists.
 Future<Map<String, dynamic>> _findOrder(
   Db db,
   ObjectId userId,
@@ -107,10 +80,6 @@ Future<Map<String, dynamic>> _findOrder(
   return order;
 }
 
-/// Standing in for PayPal's "create order" call.
-///
-/// Re-using an open attempt is deliberate: tapping "Pay with PayPal" twice
-/// must not open two payments for one order.
 Future<Map<String, dynamic>> _sandboxCreate(
   Db db,
   Map<String, dynamic> order,
@@ -119,8 +88,9 @@ Future<Map<String, dynamic>> _sandboxCreate(
   final existing = await payments.findOne(
     where.eq('orderId', order['_id'] as ObjectId).eq('status', 'created'),
   );
+  // Pay pressed twice reuses the open payment instead of opening a
+  // second one. We do not trust the client to press only once.
   if (existing != null) return existing;
-
   final now = DateTime.now().toUtc();
   final paypalOrderId = newSandboxPaypalOrderId();
   final doc = <String, dynamic>{
@@ -139,7 +109,6 @@ Future<Map<String, dynamic>> _sandboxCreate(
   return doc;
 }
 
-/// Screen 21a -> 21b: opens the payment and returns the approval link.
 Future<Map<String, dynamic>> startPaypalPayment(
   Db db,
   ObjectId userId,
@@ -147,7 +116,6 @@ Future<Map<String, dynamic>> startPaypalPayment(
 ) async {
   final order = await _findOrder(db, userId, rawOrderId);
   checkPaypalOrder(order);
-
   final payment = await _sandboxCreate(db, order);
   return <String, dynamic>{
     'payment': paymentView(payment),
@@ -161,7 +129,6 @@ Future<Map<String, dynamic>> startPaypalPayment(
   };
 }
 
-/// Screen 21b: the app asks "has PayPal answered yet?" while it waits.
 Future<Map<String, dynamic>> paypalPaymentStatus(
   Db db,
   ObjectId userId,
@@ -188,16 +155,10 @@ Future<Map<String, dynamic>> paypalPaymentStatus(
   };
 }
 
-/// Standing in for PayPal's "capture order" call. Returns true when the money
-/// is taken; in the sandbox the answer is whatever the app asked for, which is
-/// how screen 24 can be reached without a real declined card.
+// Stub. A live version asks the provider right here, and only a
+// COMPLETED answer is allowed to mark the order paid.
 bool _sandboxCapture({required bool approved}) => approved;
 
-/// Reads `paypalOrderId` and `approved` off the capture body.
-///
-/// `approved` defaults to true: the app only reaches this line after the buyer
-/// pressed the button in the sandbox approval window. Sending `false` is how
-/// the failed-payment screen is produced.
 ({String paypalOrderId, bool approved}) cleanCaptureInput(Object? body) {
   if (body is! Map<String, dynamic>) {
     throw const ApiError(400, 'Body must be a JSON object');
@@ -213,13 +174,6 @@ bool _sandboxCapture({required bool approved}) => approved;
   return (paypalOrderId: rawId.trim(), approved: rawApproved != false);
 }
 
-/// Screen 23b and screen 24: the money is taken, or the order is taken apart.
-///
-/// A failed payment **cancels the order** and puts the kg back on the shelf.
-/// Screen 24 promises exactly that - "Your order has not been placed" - and an
-/// unpaid order nobody can pay for would hold stock hostage otherwise. "Try
-/// again" therefore means placing the order again, which the app does from the
-/// cart it still has on screen.
 Future<Map<String, dynamic>> capturePaypalPayment(
   Db db,
   ObjectId userId,
@@ -229,7 +183,6 @@ Future<Map<String, dynamic>> capturePaypalPayment(
   final input = cleanCaptureInput(body);
   final orders = db.collection('orders');
   final payments = db.collection('payments');
-
   final order = await _findOrder(db, userId, rawOrderId);
   checkPaypalMethod(order);
 
@@ -248,9 +201,8 @@ Future<Map<String, dynamic>> capturePaypalPayment(
           : 'This payment already failed',
     );
   }
-  // Only now the order itself: method, cancelled, already paid.
-  checkPaypalOrder(order);
 
+  checkPaypalOrder(order);
   final now = DateTime.now().toUtc();
   final approved = _sandboxCapture(approved: input.approved);
 
@@ -278,7 +230,6 @@ Future<Map<String, dynamic>> capturePaypalPayment(
     where.id(payment['_id'] as ObjectId),
     modify.set('status', 'captured').set('capturedAt', now),
   );
-
   final captured = await payments.findOne(where.id(payment['_id'] as ObjectId));
   await orders.updateOne(
     where.id(order['_id'] as ObjectId),
@@ -294,8 +245,6 @@ Future<Map<String, dynamic>> capturePaypalPayment(
         .set('updatedAt', now),
   );
 
-  // The buyer has just paid, so the notification list on screen 31 says so
-  // with its own type and icon.
   await addNotification(
     db,
     userId: userId,
@@ -304,7 +253,6 @@ Future<Map<String, dynamic>> capturePaypalPayment(
     body: '${moneyLabel(payment['amountCents'])} paid with PayPal.',
     orderId: order['_id'] as ObjectId,
   );
-
   final updated = await orders.findOne(where.id(order['_id'] as ObjectId));
   return <String, dynamic>{
     'paid': true,
@@ -314,8 +262,6 @@ Future<Map<String, dynamic>> capturePaypalPayment(
   };
 }
 
-/// Turns a failed payment into the state screen 24 describes: nothing was
-/// placed, nothing was charged, and the rice is back on the shelf.
 Future<void> _cancelForFailedPayment(
   Db db,
   Map<String, dynamic> order,
@@ -337,9 +283,5 @@ Future<void> _cancelForFailedPayment(
         .set('statusHistory', history)
         .set('updatedAt', now),
   );
-
-  // Screen 31 has to be able to explain why the order disappeared: reuse the
-  // wording chunk 9 already wrote for a cancelled order, by handing the same
-  // notification builder a copy of the order with the new status.
   await notifyOrder(db, <String, dynamic>{...order, 'status': 'cancelled'});
 }

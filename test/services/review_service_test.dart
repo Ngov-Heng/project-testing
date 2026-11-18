@@ -3,7 +3,6 @@ import 'package:faheng_api/services/review_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -13,7 +12,6 @@ ApiError _apiError(void Function() action) {
   fail('expected an ApiError, but nothing was thrown');
 }
 
-/// One review document, the shape the database holds.
 Map<String, dynamic> _doc({
   required int stars,
   String? comment,
@@ -150,7 +148,6 @@ void main() {
     });
 
     test('the mock numbers average 4.5 out of 18', () {
-      // 12 five star, 4 four star, 1 three, 1 two, 0 one: the bars on the mock.
       final reviews = <Map<String, dynamic>>[
         for (var i = 0; i < 12; i++) _doc(stars: 5),
         for (var i = 0; i < 4; i++) _doc(stars: 4),
@@ -174,7 +171,6 @@ void main() {
         _doc(stars: 4),
         _doc(stars: 5),
       ]);
-      // 13 / 3 = 4.333... which the screen prints as 4.3.
       expect(summary['average'], 4.3);
     });
 

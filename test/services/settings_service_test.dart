@@ -1,15 +1,7 @@
-// WHY: The settings document decides every price, so its validation and its
-// two views (public for the app, admin for screens 48 and 50) are tested
-// without a database. Only pure functions are tested here; the database part
-// is covered by the Bruno requests.
-// Where it sits in the flow: these are the same functions the two settings
-// routes call, so a green test means a bad form on screen 48 cannot be saved.
-
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/settings_service.dart';
 import 'package:test/test.dart';
 
-/// A complete, valid body, as screen 48 and screen 50 would send it.
 Map<String, dynamic> validBody() => <String, dynamic>{
   'bulkDiscount': <String, dynamic>{
     'enabled': true,
@@ -25,7 +17,6 @@ Map<String, dynamic> validBody() => <String, dynamic>{
   'paymentMethods': <String, dynamic>{'paypal': true, 'cod': true},
 };
 
-/// Runs the validation and returns the ApiError it throws, or null.
 ApiError? errorFrom(Map<String, dynamic> body) {
   try {
     cleanSettingsUpdate(body);

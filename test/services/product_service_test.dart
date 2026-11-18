@@ -3,7 +3,6 @@ import 'package:faheng_api/services/product_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -13,9 +12,6 @@ ApiError _apiError(void Function() action) {
   fail('expected an ApiError, but nothing was thrown');
 }
 
-/// The conditions inside a selector. mongo_dart wraps them in `$query`, and
-/// turns two conditions on the same field into an `$and` list, so tests read
-/// them through this helper instead of guessing the shape.
 List<Map<String, dynamic>> conditionsOf(SelectorBuilder selector) {
   final query = (selector.map[r'$query'] as Map?) ?? const <String, dynamic>{};
   final and = query[r'$and'];

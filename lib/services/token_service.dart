@@ -1,16 +1,13 @@
-/*
-Creates and verifies JWT login tokens for authenticated users. Signs a token
-holding the user's ID (valid for 7 days) when they log in, and extracts the
-user ID back out when protected routes check incoming requests.
-*/
+// JWT sign and verify. The secret comes from JWT_SECRET.
+
 import 'dart:io';
 
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 
 String get _secret =>
+    // Change the secret and every token we ever issued stops working.
     Platform.environment['JWT_SECRET'] ?? 'dev-only-secret-change-me';
 
-/// Creates a signed login token for [userId] that expires in 7 days.
 String createToken(String userId) {
   return JWT({'sub': userId}).sign(
     SecretKey(_secret),
@@ -18,7 +15,6 @@ String createToken(String userId) {
   );
 }
 
-/// Returns the user id inside a valid token, or null if it is bad or expired.
 String? verifyToken(String token) {
   try {
     final jwt = JWT.verify(token, SecretKey(_secret));

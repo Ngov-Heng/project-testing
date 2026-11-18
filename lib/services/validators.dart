@@ -1,20 +1,10 @@
-/*
-Cleans and validates email addresses and phone numbers across signup, login,
-and profile updates so contact details are always stored in a consistent
-format and checked against basic format rules.
-*/
-/// Trims and lowercases an email so the same address
-/// is always stored the same way.
+// Email and phone: normalise first, then validate.
+
 String normalizeEmail(String email) => email.trim().toLowerCase();
 
-/// Removes spaces, dashes, dots and brackets from a phone number
-/// (keeps a leading +).
 String normalizePhone(String phone) =>
     phone.replaceAll(RegExp(r'[\s\-().]'), '');
 
-/// True for a simple, plausible email address.
 bool isValidEmail(String email) =>
     RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
-
-/// True for 8 to 15 digits, with an optional leading +.
 bool isValidPhone(String phone) => RegExp(r'^\+?[0-9]{8,15}$').hasMatch(phone);

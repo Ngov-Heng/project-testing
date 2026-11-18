@@ -1,9 +1,3 @@
-// WHY: Screen 30 (rate your order) has two halves: read which products of the
-// order still need a rating (GET), and send one review (POST, 201).
-// Where it sits in the flow: authGuard has already run for everything under
-// /api/orders, so the buyer id comes from the token and another buyer's order
-// answers 404 inside the service.
-
 import 'dart:convert';
 
 import 'package:dart_frog/dart_frog.dart';
@@ -12,7 +6,6 @@ import 'package:faheng_api/services/order_service.dart';
 import 'package:faheng_api/services/review_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-/// Reads the review state of this order, or writes one review.
 Future<Response> onRequest(RequestContext context, String id) async {
   final user = context.read<Map<String, dynamic>>();
   final db = context.read<Db>();

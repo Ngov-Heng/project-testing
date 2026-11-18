@@ -3,7 +3,6 @@ import 'package:faheng_api/services/report_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -42,7 +41,6 @@ Map<String, dynamic> _item(ObjectId productId, String name, num kg,
     };
 
 void main() {
-  // 7 Nov 2026 is a Saturday; the report "today" in these tests is 7 Nov.
   final nowUtc = DateTime.utc(2026, 11, 7, 5);
 
   group('the range picker on screen 49', () {
@@ -103,7 +101,6 @@ void main() {
     });
 
     test('the range is a Phnom Penh day, not a UTC one', () {
-      // 20:00 UTC on 6 Nov is already 7 Nov in Cambodia.
       final range = reportRange(
         <String, String>{},
         nowUtc: DateTime.utc(2026, 11, 6, 20),
@@ -154,7 +151,6 @@ void main() {
     });
 
     test('an order lands on its Phnom Penh day, not its UTC day', () {
-      // 20:00 UTC on 6 Nov is 03:00 on 7 Nov in Cambodia.
       final daily = dailyRevenue(
         [_order(cents: 50000, createdAt: '2026-11-06T20:00:00.000Z')],
         range,

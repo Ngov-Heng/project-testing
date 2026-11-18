@@ -6,7 +6,6 @@ import 'package:faheng_api/services/paypal_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -53,22 +52,18 @@ void main() {
     });
 
     test('the narrow method check only looks at the method', () {
-      // The capture path needs this: a payment that was already captured is
-      // answered with the payment's state, not the order's.
       checkPaypalMethod(_order(paid: 'paid'));
       final error = _apiError(() => checkPaypalMethod(_order(method: 'cod')));
       expect(error.message, 'This order is paid on delivery');
     });
 
     test('a fresh PayPal order passes', () {
-      // Nothing thrown is the whole assertion.
       checkPaypalOrder(_order());
     });
   });
 
   group('the amount on screen 21a', () {
     test('it is the grand total, in cents', () {
-      // The mock: 148.00 + 19.20 + 3.00 delivery = 170.20.
       expect(paypalAmountCents(_order()), 17020);
     });
 

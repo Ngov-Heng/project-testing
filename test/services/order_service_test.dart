@@ -3,7 +3,6 @@ import 'package:faheng_api/services/order_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -14,16 +13,14 @@ ApiError _apiError(void Function() action) {
 }
 
 void main() {
-  // 8 Nov 2026, 10:00 in the morning in Phnom Penh (03:00 UTC).
   final nowUtc = DateTime.utc(2026, 11, 8, 3);
 
   test('today is decided in Phnom Penh time, not UTC', () {
-    // 2026-11-08 20:00 UTC is already 9 Nov in Phnom Penh.
     expect(
       phnomPenhToday(nowUtc: DateTime.utc(2026, 11, 8, 20)),
       DateTime.utc(2026, 11, 9),
     );
-    // 01:00 UTC on 9 Nov is 08:00 the same morning in Phnom Penh.
+
     expect(
       phnomPenhToday(nowUtc: DateTime.utc(2026, 11, 9, 1)),
       DateTime.utc(2026, 11, 9),
@@ -229,7 +226,6 @@ void main() {
       ],
       'createdAt': DateTime.utc(2026, 11, 8, 3),
     });
-
     expect(view['id'], id.oid);
     expect(view['subtotal'], 180.0);
     expect(view['discount'], 18.0);

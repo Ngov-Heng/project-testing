@@ -2,7 +2,6 @@ import 'package:faheng_api/services/notification_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// One order document, cut down to the fields the notification text needs.
 Map<String, dynamic> _order(
   String status, {
   String window = 'morning',
@@ -27,7 +26,6 @@ void main() {
     });
 
     test('a PayPal order is not announced as cash on delivery', () {
-      // Screen 23b prints "PayPal · Paid"; the bell must not disagree.
       final wording = orderNotification(_order('pending', method: 'paypal'))!;
       expect(wording['body'], r'$170.20 · PayPal');
       expect(wording['body'], isNot(contains('Cash on delivery')));
@@ -99,7 +97,6 @@ void main() {
       expect(view['type'], 'order_on_the_way');
       expect((view['orderId']! as String).length, 24);
       expect(view['createdAt'], '2026-11-07T07:45:00.000Z');
-      // An order notification has no Accept button.
       expect(view.containsKey('canRespond'), isFalse);
     });
 

@@ -4,7 +4,6 @@ import 'package:faheng_api/services/order_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:test/test.dart';
 
-/// Runs [action] and returns the ApiError it throws.
 ApiError _apiError(void Function() action) {
   try {
     action();
@@ -14,9 +13,6 @@ ApiError _apiError(void Function() action) {
   fail('expected an ApiError, but nothing was thrown');
 }
 
-/// The conditions inside a selector. mongo_dart wraps them in `$query`, and
-/// turns two conditions on the same field into an `$and` list, so tests read
-/// them through this helper instead of guessing the shape.
 List<Map<String, dynamic>> conditionsOf(SelectorBuilder selector) {
   final query = (selector.map[r'$query'] as Map?) ?? const <String, dynamic>{};
   final and = query[r'$and'];
@@ -29,7 +25,6 @@ List<Map<String, dynamic>> conditionsOf(SelectorBuilder selector) {
 }
 
 void main() {
-  // 8 Nov 2026 is a Sunday; 9 Nov 2026 is the Monday after it.
   final sunday = DateTime.utc(2026, 11, 8);
 
   group('the heavy badge on screen 40', () {
@@ -67,7 +62,6 @@ void main() {
     });
 
     test('the admin and the buyer share one rulebook', () {
-      // orderTransitions is the map chunk 3 wrote, not a copy.
       expect(
         orderTransitions.keys.toList(),
         containsAll(<String>['pending', 'processing', 'on_the_way']),
@@ -159,15 +153,11 @@ void main() {
         }),
       );
       final conditions = conditionsOf(selector).toString();
-      // From the 1st...
       expect(conditions, contains('2026-11-01'));
-      // ...to midnight on the 8th, so everything on the 7th is included.
       expect(conditions, contains('2026-11-08'));
     });
 
     test('the search box is not part of the query builder', () {
-      // It has to be resolved to ids first, so it must not sneak in as a regex
-      // that Mongo would run against one field only.
       final selector = buildOrderQuery(
         adminOrderFilters(<String, String>{'q': 'FH-1042'}),
       );
@@ -245,7 +235,6 @@ void main() {
     });
 
     test('late evening UTC is already the new week in Cambodia', () {
-      // 20:00 UTC on Sunday 8 Nov is Monday 9 Nov in Phnom Penh.
       final monday = cleanWeekStart(
         <String, String>{},
         nowUtc: DateTime.utc(2026, 11, 8, 20),
