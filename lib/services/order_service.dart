@@ -34,10 +34,11 @@ const cancelReasons = <String, String>{
   'found_better_price': 'I found a better price',
   'other': 'Other reason',
 };
-const paymentMethods = ['paypal', 'cod'];
+const paymentMethods = ['paypal', 'stripe', 'cod'];
 
 const paymentMethodLabels = {
   'paypal': 'PayPal',
+  'stripe': 'Card',
   'cod': 'Cash on delivery',
 };
 const firstOrderNumber = 1001;
@@ -98,7 +99,7 @@ String cleanPaymentMethod(Object? value) {
   }
   final method = value.trim().toLowerCase();
   if (!paymentMethods.contains(method)) {
-    throw const ApiError(400, 'paymentMethod must be paypal or cod');
+    throw const ApiError(400, 'paymentMethod must be paypal, stripe or cod');
   }
   return method;
 }

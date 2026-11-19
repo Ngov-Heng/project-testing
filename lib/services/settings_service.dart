@@ -38,7 +38,11 @@ Map<String, dynamic> defaultSettings() => <String, dynamic>{
     'phone': '',
     'address': '',
   },
-  'paymentMethods': <String, dynamic>{'paypal': true, 'cod': true},
+  'paymentMethods': <String, dynamic>{
+    'paypal': true,
+    'stripe': true,
+    'cod': true,
+  },
 };
 
 Map<String, dynamic> withDefaults(Map<String, dynamic> stored) {
@@ -71,6 +75,7 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> stored) {
     },
     'paymentMethods': <String, dynamic>{
       'paypal': methods['paypal'] ?? defaultMethods['paypal'],
+      'stripe': methods['stripe'] ?? defaultMethods['stripe'],
       'cod': methods['cod'] ?? defaultMethods['cod'],
     },
   };
@@ -148,14 +153,18 @@ Map<String, dynamic> cleanSettingsUpdate(Object? body) {
   final methods = body['paymentMethods'];
   if (methods is! Map) throw const ApiError(400, 'paymentMethods is required');
   final paypal = methods['paypal'];
+  final stripe = methods['stripe'];
   final cod = methods['cod'];
   if (paypal is! bool) {
     throw const ApiError(400, 'paymentMethods.paypal must be true or false');
   }
+  if (stripe is! bool) {
+    throw const ApiError(400, 'paymentMethods.stripe must be true or false');
+  }
   if (cod is! bool) {
     throw const ApiError(400, 'paymentMethods.cod must be true or false');
   }
-  if (!paypal && !cod) {
+  if (!paypal && !stripe && !cod) {
     throw const ApiError(400, 'at least one payment method must stay enabled');
   }
 
@@ -172,7 +181,11 @@ Map<String, dynamic> cleanSettingsUpdate(Object? body) {
       'phone': phone.trim(),
       'address': address.trim(),
     },
-    'paymentMethods': <String, dynamic>{'paypal': paypal, 'cod': cod},
+    'paymentMethods': <String, dynamic>{
+      'paypal': paypal,
+      'stripe': stripe,
+      'cod': cod,
+    },
   };
 }
 
@@ -197,6 +210,7 @@ Map<String, dynamic> publicSettingsView(Map<String, dynamic> settings) {
     },
     'paymentMethods': <String, dynamic>{
       'paypal': methods['paypal'],
+      'stripe': methods['stripe'],
       'cod': methods['cod'],
     },
     'deliveryFee': toDollars(rules.deliveryFeeCents),
@@ -222,6 +236,7 @@ Map<String, dynamic> adminSettingsView(Map<String, dynamic> settings) {
     },
     'paymentMethods': <String, dynamic>{
       'paypal': methods['paypal'],
+      'stripe': methods['stripe'],
       'cod': methods['cod'],
     },
   };

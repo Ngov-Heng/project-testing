@@ -87,7 +87,7 @@ void main() {
     expect(cleanPaymentMethod('COD'), 'cod');
     expect(
       _apiError(() => cleanPaymentMethod('card')).message,
-      'paymentMethod must be paypal or cod',
+      'paymentMethod must be paypal, stripe or cod',
     );
   });
 

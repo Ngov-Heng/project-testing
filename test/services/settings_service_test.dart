@@ -14,7 +14,11 @@ Map<String, dynamic> validBody() => <String, dynamic>{
     'phone': '+855 77 889 900',
     'address': 'Street 33, Kampot town, Kampot',
   },
-  'paymentMethods': <String, dynamic>{'paypal': true, 'cod': true},
+  'paymentMethods': <String, dynamic>{
+    'paypal': true,
+    'stripe': true,
+    'cod': true,
+  },
 };
 
 ApiError? errorFrom(Map<String, dynamic> body) {
@@ -55,9 +59,13 @@ void main() {
       expect(shop['address'], 'Street 33');
     });
 
-    test('refuses when both payment methods are off', () {
+    test('refuses when every payment method is off', () {
       final body = validBody()
-        ..['paymentMethods'] = <String, dynamic>{'paypal': false, 'cod': false};
+        ..['paymentMethods'] = <String, dynamic>{
+          'paypal': false,
+          'stripe': false,
+          'cod': false,
+        };
       expect(errorFrom(body)?.statusCode, 400);
       expect(
         errorFrom(body)?.message,
