@@ -1,6 +1,9 @@
 // Card payments through Stripe. POST opens (or reuses) a payment, GET reports
 // where the order stands.
+import 'dart:convert';
+
 import 'package:dart_frog/dart_frog.dart';
+import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/stripe_service.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
@@ -10,7 +13,16 @@ Future<Response> onRequest(RequestContext context, String id) async {
   final userId = user['_id'] as ObjectId;
 
   if (context.request.method == HttpMethod.post) {
-    final started = await startStripePayment(db, userId, id);
+    final raw = await context.request.body();
+    Object? body;
+    if (raw.trim().isNotEmpty) {
+      try {
+        body = jsonDecode(raw);
+      } catch (_) {
+        return jsonError(400, 'Body must be valid JSON');
+      }
+    }
+    final started = await startStripePayment(db, userId, id, body: body);
     return Response.json(statusCode: 201, body: started);
   }
 

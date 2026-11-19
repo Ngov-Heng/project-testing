@@ -160,6 +160,39 @@ void main() {
     });
   });
 
+  group('cleanTestCard', () {
+    test('no body means the configured default card', () {
+      expect(cleanTestCard(null), isNull);
+      expect(cleanTestCard(<String, dynamic>{}), isNull);
+    });
+
+    test('accepts a documented Stripe decline card', () {
+      expect(
+        cleanTestCard(<String, dynamic>{
+          'testPaymentMethod': 'pm_card_visa_chargeDeclined',
+        }),
+        'pm_card_visa_chargeDeclined',
+      );
+    });
+
+    test('refuses a card Stripe does not document', () {
+      final error = _error(
+        () => cleanTestCard(<String, dynamic>{
+          'testPaymentMethod': 'pm_card_free_money',
+        }),
+      );
+      expect(error?.statusCode, 400);
+      expect(error?.message, contains('pm_card_visa'));
+    });
+
+    test('refuses a value that is not text', () {
+      final error = _error(
+        () => cleanTestCard(<String, dynamic>{'testPaymentMethod': 42}),
+      );
+      expect(error?.statusCode, 400);
+    });
+  });
+
   group('cleanConfirmInput', () {
     test('requires a payment intent id', () {
       final missing = _error(() => cleanConfirmInput(<String, dynamic>{}));

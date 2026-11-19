@@ -16,11 +16,48 @@ const stripeApiBase = 'https://api.stripe.com/v1';
 
 String get stripeSecretKey => envValue('STRIPE_SECRET_KEY', '');
 
-String get stripeCurrency =>
-    envValue('STRIPE_CURRENCY', 'usd').toLowerCase();
+String get stripeCurrency => envValue('STRIPE_CURRENCY', 'usd').toLowerCase();
 
 String get stripeTestPaymentMethod =>
     envValue('STRIPE_TEST_PAYMENT_METHOD', 'pm_card_visa');
+
+// Test cards are refused the moment a live key is in use, so this knob can
+// never take money from a real customer.
+bool get stripeAllowsTestCards => !stripeSecretKey.startsWith('sk_live_');
+
+const stripeTestCards = <String>[
+  'pm_card_visa',
+  'pm_card_visa_chargeDeclined',
+  'pm_card_visa_chargeDeclinedInsufficientFunds',
+  'pm_card_visa_chargeDeclinedLostCard',
+  'pm_card_visa_chargeDeclinedStolenCard',
+  'pm_card_chargeDeclinedExpiredCard',
+  'pm_card_chargeDeclinedIncorrectCvc',
+  'pm_card_chargeDeclinedProcessingError',
+];
+
+String? cleanTestCard(Object? body) {
+  if (body is! Map<String, dynamic>) return null;
+  final raw = body['testPaymentMethod'];
+  if (raw == null) return null;
+  if (raw is! String) {
+    throw const ApiError(400, 'testPaymentMethod must be a string');
+  }
+  final card = raw.trim();
+  if (!stripeTestCards.contains(card)) {
+    throw ApiError(
+      400,
+      'testPaymentMethod must be one of ${stripeTestCards.join(', ')}',
+    );
+  }
+  if (!stripeAllowsTestCards) {
+    throw const ApiError(
+      400,
+      'testPaymentMethod is not allowed with a live key',
+    );
+  }
+  return card;
+}
 
 http.Client stripeHttpClient = http.Client();
 
@@ -55,9 +92,7 @@ void verifyStripeIntent(
     throw ApiError(402, 'Stripe reports "$status", so the order is not paid');
   }
   final received =
-      ((intent['amount_received'] as num?) ??
-              (intent['amount'] as num?) ??
-              0)
+      ((intent['amount_received'] as num?) ?? (intent['amount'] as num?) ?? 0)
           .round();
   if (received != amountCents) {
     throw ApiError(
@@ -123,6 +158,7 @@ Future<Map<String, dynamic>> createStripeIntent({
   required int amountCents,
   required String orderId,
   required String description,
+  String? paymentMethod,
 }) async {
   final response = await stripeHttpClient.post(
     Uri.parse('$stripeApiBase/payment_intents'),
@@ -130,8 +166,9 @@ Future<Map<String, dynamic>> createStripeIntent({
     body: <String, String>{
       'amount': '$amountCents',
       'currency': stripeCurrency,
-      'payment_method': stripeTestPaymentMethod,
-      'payment_method_types[]': 'card',
+      'payment_method': paymentMethod ?? stripeTestPaymentMethod,
+      'automatic_payment_methods[enabled]': 'true',
+      'automatic_payment_methods[allow_redirects]': 'never',
       'confirm': 'true',
       'description': description,
       'metadata[orderId]': orderId,
@@ -179,8 +216,9 @@ Future<Map<String, dynamic>> _findOrder(
 
 Future<Map<String, dynamic>> _openPayment(
   Db db,
-  Map<String, dynamic> order,
-) async {
+  Map<String, dynamic> order, {
+  String? testCard,
+}) async {
   final payments = db.collection('payments');
   final existing = await payments.findOne(
     where
@@ -194,6 +232,7 @@ Future<Map<String, dynamic>> _openPayment(
     amountCents: stripeAmountCents(order),
     orderId: (order['_id'] as ObjectId).oid,
     description: 'Faheng Rice ${order['orderNumber']}',
+    paymentMethod: testCard,
   );
   final now = DateTime.now().toUtc();
   final doc = <String, dynamic>{
@@ -215,14 +254,16 @@ Future<Map<String, dynamic>> _openPayment(
 Future<Map<String, dynamic>> startStripePayment(
   Db db,
   ObjectId userId,
-  String rawOrderId,
-) async {
+  String rawOrderId, {
+  Object? body,
+}) async {
   if (stripeSecretKey.isEmpty) {
     throw const ApiError(503, 'Stripe is not configured on this server');
   }
+  final testCard = cleanTestCard(body);
   final order = await _findOrder(db, userId, rawOrderId);
   checkStripeOrder(order);
-  final payment = await _openPayment(db, order);
+  final payment = await _openPayment(db, order, testCard: testCard);
   return <String, dynamic>{
     'payment': stripePaymentView(payment),
     'order': <String, dynamic>{
@@ -242,12 +283,16 @@ Future<Map<String, dynamic>> stripePaymentStatus(
   String rawOrderId,
 ) async {
   final order = await _findOrder(db, userId, rawOrderId);
-  final payment = await db.collection('payments').findOne(
-    where.eq('orderId', order['_id'] as ObjectId).sortBy(
-          'createdAt',
-          descending: true,
-        ),
-  );
+  final payment = await db
+      .collection('payments')
+      .findOne(
+        where
+            .eq('orderId', order['_id'] as ObjectId)
+            .sortBy(
+              'createdAt',
+              descending: true,
+            ),
+      );
   return <String, dynamic>{
     'order': <String, dynamic>{
       'id': (order['_id'] as ObjectId).oid,
@@ -319,8 +364,7 @@ Future<Map<String, dynamic>> captureStripePayment(
         .set('providerStatus', intent['status'])
         .set('capturedAt', now),
   );
-  final captured =
-      await payments.findOne(where.id(payment['_id'] as ObjectId));
+  final captured = await payments.findOne(where.id(payment['_id'] as ObjectId));
   await orders.updateOne(
     where.id(order['_id'] as ObjectId),
     modify
