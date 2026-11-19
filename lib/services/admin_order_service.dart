@@ -388,11 +388,10 @@ Future<Map<String, dynamic>> setAdminPaymentStatus(
     throw const ApiError(400, 'paymentStatus must be paid or unpaid');
   }
   final next = asText;
-  final onlineMethod = order['paymentMethod'];
-  if (onlineMethod == 'paypal' || onlineMethod == 'stripe') {
+  if (order['paymentMethod'] == 'stripe') {
     throw const ApiError(
       400,
-      'Card and PayPal payments are confirmed by the provider, not by hand',
+      'Card payments are confirmed by the provider, not by hand',
     );
   }
   if (order['status'] == 'cancelled') {

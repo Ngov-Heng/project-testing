@@ -83,11 +83,11 @@ void main() {
   });
 
   test('the payment method is stored lowercase', () {
-    expect(cleanPaymentMethod('paypal'), 'paypal');
+    expect(cleanPaymentMethod('stripe'), 'stripe');
     expect(cleanPaymentMethod('COD'), 'cod');
     expect(
       _apiError(() => cleanPaymentMethod('card')).message,
-      'paymentMethod must be paypal, stripe or cod',
+      'paymentMethod must be stripe or cod',
     );
   });
 

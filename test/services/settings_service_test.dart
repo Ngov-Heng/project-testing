@@ -15,7 +15,6 @@ Map<String, dynamic> validBody() => <String, dynamic>{
     'address': 'Street 33, Kampot town, Kampot',
   },
   'paymentMethods': <String, dynamic>{
-    'paypal': true,
     'stripe': true,
     'cod': true,
   },
@@ -62,7 +61,6 @@ void main() {
     test('refuses when every payment method is off', () {
       final body = validBody()
         ..['paymentMethods'] = <String, dynamic>{
-          'paypal': false,
           'stripe': false,
           'cod': false,
         };

@@ -1,12 +1,11 @@
 // JWT sign and verify. The secret comes from JWT_SECRET.
 
-import 'dart:io';
-
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
+import 'package:faheng_api/env.dart';
 
 String get _secret =>
     // Change the secret and every token we ever issued stops working.
-    Platform.environment['JWT_SECRET'] ?? 'dev-only-secret-change-me';
+    envValue('JWT_SECRET', 'dev-only-secret-change-me');
 
 String createToken(String userId) {
   return JWT({'sub': userId}).sign(

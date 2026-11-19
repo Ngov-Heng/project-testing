@@ -3,8 +3,8 @@
 // Collections: payments, orders
 
 import 'dart:convert';
-import 'dart:io';
 
+import 'package:faheng_api/env.dart';
 import 'package:faheng_api/services/api_error.dart';
 import 'package:faheng_api/services/notification_service.dart';
 import 'package:faheng_api/services/order_service.dart';
@@ -14,13 +14,13 @@ import 'package:mongo_dart/mongo_dart.dart';
 const stripeProvider = 'stripe';
 const stripeApiBase = 'https://api.stripe.com/v1';
 
-String get stripeSecretKey => Platform.environment['STRIPE_SECRET_KEY'] ?? '';
+String get stripeSecretKey => envValue('STRIPE_SECRET_KEY', '');
 
 String get stripeCurrency =>
-    (Platform.environment['STRIPE_CURRENCY'] ?? 'usd').toLowerCase();
+    envValue('STRIPE_CURRENCY', 'usd').toLowerCase();
 
 String get stripeTestPaymentMethod =>
-    Platform.environment['STRIPE_TEST_PAYMENT_METHOD'] ?? 'pm_card_visa';
+    envValue('STRIPE_TEST_PAYMENT_METHOD', 'pm_card_visa');
 
 http.Client stripeHttpClient = http.Client();
 

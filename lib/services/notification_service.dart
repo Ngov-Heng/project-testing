@@ -31,7 +31,6 @@ String moneyLabel(Object? cents) {
 }
 
 const paymentLabels = <String, String>{
-  'paypal': 'PayPal',
   'stripe': 'Card',
   'cod': 'Cash on delivery',
 };

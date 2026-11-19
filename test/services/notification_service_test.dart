@@ -25,9 +25,9 @@ void main() {
       expect(wording['body'], r'$170.20 · Cash on delivery');
     });
 
-    test('a PayPal order is not announced as cash on delivery', () {
-      final wording = orderNotification(_order('pending', method: 'paypal'))!;
-      expect(wording['body'], r'$170.20 · PayPal');
+    test('a card order is not announced as cash on delivery', () {
+      final wording = orderNotification(_order('pending', method: 'stripe'))!;
+      expect(wording['body'], r'$170.20 · Card');
       expect(wording['body'], isNot(contains('Cash on delivery')));
     });
 
